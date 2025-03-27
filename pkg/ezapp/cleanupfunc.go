@@ -26,9 +26,5 @@ package ezapp
 //		return nil
 //	}
 //
-// A CleanupFunc can be provided to the EzApp in two ways:
-// 1. As part of the WireBundle returned by the WireFunc
-// 2. Using the WithCleanupFunc option when calling Build
-//
-// If both are provided, the one from the WithCleanupFunc option takes precedence.
+// A CleanupFunc is provided to the EzApp as part of the WireBundle returned by the WireFunc.
 type CleanupFunc func() error

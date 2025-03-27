@@ -7,7 +7,6 @@ package ezapp
 // Instead, use the provided option functions to configure the EzApp.
 type options struct {
 	errHandler   ErrHandler  // Function to handle errors from Runnables
-	cleanupFunc  CleanupFunc // Function to perform cleanup operations
 	configPrefix string      // Prefix for environment variables when loading configuration
 }
 
@@ -15,7 +14,6 @@ type options struct {
 //
 // The default values are:
 // - errHandler: nil (no error handler)
-// - cleanupFunc: nil (no cleanup function)
 // - configPrefix: "" (no prefix for environment variables)
 //
 // This function is used internally by the Build function to create a new
@@ -23,7 +21,6 @@ type options struct {
 func getDefaultOptions() *options {
 	return &options{
 		errHandler: nil,
-		cleanupFunc: nil,
 		configPrefix: "",
 	}
 }
@@ -52,31 +49,6 @@ func WithErrorHandler(errHandler ErrHandler) option {
 	}
 }
 
-// WithCleanupFunc returns an option that sets the cleanup function for the EzApp.
-//
-// The cleanup function is called when the EzApp is done running, either because all
-// Runnables have completed or because the application is shutting down due to
-// a signal or an error. It should release any resources that were allocated
-// by the application.
-//
-// If the cleanup function returns an error, the EzApp will panic.
-//
-// Example:
-//
-//	app := ezapp.Build(
-//		wireApp,
-//		ezapp.WithCleanupFunc(func() error {
-//			return db.Close()
-//		}),
-//	)
-//
-// If a cleanup function is provided both in the WireBundle and using this option,
-// the one provided using this option takes precedence.
-func WithCleanupFunc(cleanupFunc CleanupFunc) option {
-	return func(o *options) {
-		o.cleanupFunc = cleanupFunc
-	}
-}
 
 // WithConfigPrefix returns an option that sets the prefix for environment variables when loading configuration.
 //

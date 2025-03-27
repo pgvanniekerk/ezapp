@@ -134,10 +134,6 @@ func main() {
 			fmt.Printf("Error: %v\n", err)
 			return nil
 		}),
-		ezapp.WithCleanupFunc(func() error {
-			fmt.Println("Cleaning up resources...")
-			return nil
-		}),
 	)
 
 	app.Run()

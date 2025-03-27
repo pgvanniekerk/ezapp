@@ -79,16 +79,10 @@ func Build[C any](wireFunc WireFunc[C], opts ...option) *EzApp {
 		}
 	}
 
-	// Determine which cleanup function to use
-	// If the options cleanup function is nil, use the wire bundle's cleanup function
-	if o.cleanupFunc == nil && bundle.CleanupFunc != nil {
-		o.cleanupFunc = bundle.CleanupFunc
-	}
-
 	// Create and return the EzApp
 	return &EzApp{
 		runnables:    bundle.Runnables,
 		errorHandler: o.errHandler,
-		cleanupFunc:  o.cleanupFunc,
+		cleanupFunc:  bundle.CleanupFunc,
 	}
 }
