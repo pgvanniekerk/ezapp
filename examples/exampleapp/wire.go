@@ -45,7 +45,7 @@ func (db *MockDB) Close() error {
 }
 
 // Query simulates a database query
-func (db *MockDB) Query(ctx context.Context, query string) (time.Time, error) {
+func (db *MockDB) Query(ctx context.Context, _ string) (time.Time, error) {
 	if !db.isConnected {
 		return time.Time{}, fmt.Errorf("database not connected")
 	}
