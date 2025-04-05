@@ -174,7 +174,14 @@ This pattern allows for clean separation of concerns and makes testing easier by
 
 ### Advanced Usage: Functional Options
 
-EzApp provides functional options to customize its behavior:
+EzApp provides functional options to customize its behavior. When calling `Build` without specifying options or using `buildoption.WithoutOptions()`, the following default values are used:
+
+- **Error Handler**: Default handler that panics on errors
+- **Startup Timeout**: 15 seconds
+- **Environment Variable Prefix**: Empty string (no prefix)
+- **Shutdown Signal**: A channel that closes when SIGTERM or SIGINT is received
+
+You can customize these defaults using the options below:
 
 #### Custom Error Handler
 

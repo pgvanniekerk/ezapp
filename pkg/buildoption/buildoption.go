@@ -20,8 +20,8 @@ type BuildOptions interface {
 	GetShutdownSignal() <-chan struct{}
 }
 
-// Options holds configuration options for the Build function
-type Options struct {
+// options holds configuration options for the Build function
+type options struct {
 	ErrorHandler   app.ErrorHandler
 	StartupTimeout time.Duration
 	EnvVarPrefix   string
@@ -34,23 +34,23 @@ const DefaultStartupTimeout = 15 * time.Second
 // DefaultEnvVarPrefix is the default prefix for environment variables
 const DefaultEnvVarPrefix = ""
 
-// WithoutOptions creates a new Options with default configuration
+// WithoutOptions creates a new options with default configuration
 func WithoutOptions() BuildOptions {
-	return &Options{
+	return &options{
 		ErrorHandler:   DefaultErrorHandler,
 		StartupTimeout: DefaultStartupTimeout,
 		EnvVarPrefix:   DefaultEnvVarPrefix,
-		ShutdownSignal: nil, // Will use DefaultShutdownSignal when GetShutdownSignal is called
+		ShutdownSignal: nil, // Will use defaultShutdownSignal when GetShutdownSignal is called
 	}
 }
 
-// WithOptions creates a new Options with default configuration and applies the given options
+// WithOptions creates a new options with default configuration and applies the given options
 func WithOptions(opts ...Option) BuildOptions {
-	options := &Options{
+	options := &options{
 		ErrorHandler:   DefaultErrorHandler,
 		StartupTimeout: DefaultStartupTimeout,
 		EnvVarPrefix:   DefaultEnvVarPrefix,
-		ShutdownSignal: nil, // Will use DefaultShutdownSignal when GetShutdownSignal is called
+		ShutdownSignal: nil, // Will use defaultShutdownSignal when GetShutdownSignal is called
 	}
 
 	// Apply options
@@ -62,31 +62,31 @@ func WithOptions(opts ...Option) BuildOptions {
 }
 
 // GetErrorHandler implements the BuildOptions interface
-func (o *Options) GetErrorHandler() app.ErrorHandler {
+func (o *options) GetErrorHandler() app.ErrorHandler {
 	return o.ErrorHandler
 }
 
 // GetStartupTimeout implements the BuildOptions interface
-func (o *Options) GetStartupTimeout() time.Duration {
+func (o *options) GetStartupTimeout() time.Duration {
 	return o.StartupTimeout
 }
 
 // GetEnvVarPrefix implements the BuildOptions interface
-func (o *Options) GetEnvVarPrefix() string {
+func (o *options) GetEnvVarPrefix() string {
 	return o.EnvVarPrefix
 }
 
 // GetShutdownSignal implements the BuildOptions interface
-func (o *Options) GetShutdownSignal() <-chan struct{} {
+func (o *options) GetShutdownSignal() <-chan struct{} {
 	// If no shutdown signal is provided, create a default one
 	if o.ShutdownSignal == nil {
-		return DefaultShutdownSignal()
+		return defaultShutdownSignal()
 	}
 	return o.ShutdownSignal
 }
 
-// DefaultShutdownSignal creates a channel that closes when SIGTERM or SIGINT is received
-func DefaultShutdownSignal() <-chan struct{} {
+// defaultShutdownSignal creates a channel that closes when SIGTERM or SIGINT is received
+func defaultShutdownSignal() <-chan struct{} {
 	// Create a channel for SIGTERM (Ctrl+C)
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
@@ -103,33 +103,33 @@ func DefaultShutdownSignal() <-chan struct{} {
 	return shutdownChan
 }
 
-// Option is a function that configures Options
-type Option func(*Options)
+// Option is a function that configures options
+type Option func(*options)
 
 // WithErrorHandler sets a custom error handler for the application
 func WithErrorHandler(handler app.ErrorHandler) Option {
-	return func(options *Options) {
+	return func(options *options) {
 		options.ErrorHandler = handler
 	}
 }
 
 // WithStartupTimeout sets a custom timeout for the startup context
 func WithStartupTimeout(timeout time.Duration) Option {
-	return func(options *Options) {
+	return func(options *options) {
 		options.StartupTimeout = timeout
 	}
 }
 
 // WithEnvVarPrefix sets a custom prefix for environment variables
 func WithEnvVarPrefix(prefix string) Option {
-	return func(options *Options) {
+	return func(options *options) {
 		options.EnvVarPrefix = prefix
 	}
 }
 
 // WithShutdownSignal sets a custom shutdown signal channel
 func WithShutdownSignal(shutdownSignal <-chan struct{}) Option {
-	return func(options *Options) {
+	return func(options *options) {
 		options.ShutdownSignal = shutdownSignal
 	}
 }
