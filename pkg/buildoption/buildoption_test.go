@@ -9,32 +9,32 @@ import (
 
 // TestWithoutOptions tests that WithoutOptions returns a BuildOptions with default values
 func TestWithoutOptions(t *testing.T) {
-	options := WithoutOptions()
+	opts := WithoutOptions()
 
-	// Check that the returned value is of type *options
-	_, ok := options.(*options)
+	// Check that the returned value is of type *opts
+	_, ok := opts.(*options)
 	if !ok {
-		t.Errorf("WithoutOptions() returned %T, want *options", options)
+		t.Errorf("WithoutOptions() returned %T, want *opts", opts)
 	}
 
 	// Check default values
-	if options.GetStartupTimeout() != DefaultStartupTimeout {
-		t.Errorf("GetStartupTimeout() = %v, want %v", options.GetStartupTimeout(), DefaultStartupTimeout)
+	if opts.GetStartupTimeout() != DefaultStartupTimeout {
+		t.Errorf("GetStartupTimeout() = %v, want %v", opts.GetStartupTimeout(), DefaultStartupTimeout)
 	}
 
-	if options.GetEnvVarPrefix() != DefaultEnvVarPrefix {
-		t.Errorf("GetEnvVarPrefix() = %v, want %v", options.GetEnvVarPrefix(), DefaultEnvVarPrefix)
+	if opts.GetEnvVarPrefix() != DefaultEnvVarPrefix {
+		t.Errorf("GetEnvVarPrefix() = %v, want %v", opts.GetEnvVarPrefix(), DefaultEnvVarPrefix)
 	}
 
 	// Check that GetShutdownSignal returns a non-nil channel
-	if options.GetShutdownSignal() == nil {
+	if opts.GetShutdownSignal() == nil {
 		t.Errorf("GetShutdownSignal() = nil, want non-nil")
 	}
 
 	// Check that the error handler is set to DefaultErrorHandler
 	// We can't directly compare function values, so we'll check the function pointer
 	defaultHandlerPtr := reflect.ValueOf(DefaultErrorHandler).Pointer()
-	actualHandlerPtr := reflect.ValueOf(options.GetErrorHandler()).Pointer()
+	actualHandlerPtr := reflect.ValueOf(opts.GetErrorHandler()).Pointer()
 	if defaultHandlerPtr != actualHandlerPtr {
 		t.Errorf("GetErrorHandler() points to %v, want %v", actualHandlerPtr, defaultHandlerPtr)
 	}
@@ -48,37 +48,37 @@ func TestWithOptions(t *testing.T) {
 	customShutdownSignal := make(chan struct{})
 	customErrorHandler := func(err error) error { return nil }
 
-	// Create options with custom values
-	options := WithOptions(
+	// Create opts with custom values
+	opts := WithOptions(
 		WithStartupTimeout(customTimeout),
 		WithEnvVarPrefix(customPrefix),
 		WithShutdownSignal(customShutdownSignal),
 		WithErrorHandler(customErrorHandler),
 	)
 
-	// Check that the returned value is of type *options
-	_, ok := options.(*options)
+	// Check that the returned value is of type *opts
+	_, ok := opts.(*options)
 	if !ok {
-		t.Errorf("WithOptions() returned %T, want *options", options)
+		t.Errorf("WithOptions() returned %T, want *opts", opts)
 	}
 
 	// Check custom values
-	if options.GetStartupTimeout() != customTimeout {
-		t.Errorf("GetStartupTimeout() = %v, want %v", options.GetStartupTimeout(), customTimeout)
+	if opts.GetStartupTimeout() != customTimeout {
+		t.Errorf("GetStartupTimeout() = %v, want %v", opts.GetStartupTimeout(), customTimeout)
 	}
 
-	if options.GetEnvVarPrefix() != customPrefix {
-		t.Errorf("GetEnvVarPrefix() = %v, want %v", options.GetEnvVarPrefix(), customPrefix)
+	if opts.GetEnvVarPrefix() != customPrefix {
+		t.Errorf("GetEnvVarPrefix() = %v, want %v", opts.GetEnvVarPrefix(), customPrefix)
 	}
 
-	if options.GetShutdownSignal() != customShutdownSignal {
-		t.Errorf("GetShutdownSignal() = %v, want %v", options.GetShutdownSignal(), customShutdownSignal)
+	if opts.GetShutdownSignal() != customShutdownSignal {
+		t.Errorf("GetShutdownSignal() = %v, want %v", opts.GetShutdownSignal(), customShutdownSignal)
 	}
 
 	// Check that the error handler is set to customErrorHandler
 	// We can't directly compare function values, so we'll check the function pointer
 	customHandlerPtr := reflect.ValueOf(customErrorHandler).Pointer()
-	actualHandlerPtr := reflect.ValueOf(options.GetErrorHandler()).Pointer()
+	actualHandlerPtr := reflect.ValueOf(opts.GetErrorHandler()).Pointer()
 	if customHandlerPtr != actualHandlerPtr {
 		t.Errorf("GetErrorHandler() points to %v, want %v", actualHandlerPtr, customHandlerPtr)
 	}
@@ -160,22 +160,22 @@ func TestGetEnvVarPrefix(t *testing.T) {
 func TestGetShutdownSignal(t *testing.T) {
 	// Test with custom shutdown signal
 	customShutdownSignal := make(chan struct{})
-	options := &options{
+	opts := &options{
 		ShutdownSignal: customShutdownSignal,
 	}
 
 	// Check that GetShutdownSignal returns the custom shutdown signal
-	if options.GetShutdownSignal() != customShutdownSignal {
+	if opts.GetShutdownSignal() != customShutdownSignal {
 		t.Errorf("GetShutdownSignal() returned wrong channel")
 	}
 
 	// Test with nil shutdown signal (should return defaultShutdownSignal)
-	options = &options{
+	opts = &options{
 		ShutdownSignal: nil,
 	}
 
 	// Check that GetShutdownSignal returns a non-nil channel
-	if options.GetShutdownSignal() == nil {
+	if opts.GetShutdownSignal() == nil {
 		t.Errorf("GetShutdownSignal() = nil, want non-nil")
 	}
 }
