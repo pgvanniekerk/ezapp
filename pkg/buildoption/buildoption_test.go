@@ -208,7 +208,10 @@ func TestDefaultErrorHandler(t *testing.T) {
 	}()
 
 	// Call DefaultErrorHandler with an error
-	DefaultErrorHandler(errors.New("test error"))
+	err := DefaultErrorHandler(errors.New("test error"))
+	if err != nil {
+		t.Errorf("DefaultErrorHandler returned an error: %v", err)
+	}
 }
 
 // TestWithErrorHandler tests the WithErrorHandler function

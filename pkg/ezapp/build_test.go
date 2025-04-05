@@ -48,7 +48,7 @@ func (m *mockServiceForBuild) Run() error {
 	return m.runError
 }
 
-func (m *mockServiceForBuild) Stop(ctx context.Context) error {
+func (m *mockServiceForBuild) Stop(_ context.Context) error {
 	m.stopCalled = true
 	return m.stopError
 }

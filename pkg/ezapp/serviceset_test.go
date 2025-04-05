@@ -17,7 +17,7 @@ func (m *mockService) Run() error {
 	return nil
 }
 
-func (m *mockService) Stop(ctx context.Context) error {
+func (m *mockService) Stop(_ context.Context) error {
 	return nil
 }
 
@@ -28,7 +28,7 @@ func (m *mockServiceForNewServiceSet) Run() error {
 	return nil
 }
 
-func (m *mockServiceForNewServiceSet) Stop(ctx context.Context) error {
+func (m *mockServiceForNewServiceSet) Stop(_ context.Context) error {
 	return nil
 }
 
@@ -39,7 +39,7 @@ func (m *mockServiceForWithServices) Run() error {
 	return nil
 }
 
-func (m *mockServiceForWithServices) Stop(ctx context.Context) error {
+func (m *mockServiceForWithServices) Stop(_ context.Context) error {
 	return nil
 }
 
