@@ -3,131 +3,79 @@ package app
 import (
 	"context"
 	"errors"
-	"sync"
+	"log/slog"
+	"os"
 	"time"
 )
 
-// ErrorHandler is a function type that processes errors and returns a potentially modified error.
-// It's used throughout the application to handle errors in a consistent way, allowing for
-// custom error handling strategies such as logging, metrics collection, or error transformation.
-type ErrorHandler func(error) error
-
-// App is the core structure that manages the lifecycle of multiple services.
-// It coordinates starting, running, and gracefully shutting down services,
-// while also providing error handling capabilities.
+// App is the core application type that implements the ezapp.EzApp interface.
+// It manages the lifecycle of runnable components, handling their startup,
+// monitoring, and graceful shutdown.
+//
+// The App type is created by the wire.App function and is typically not
+// instantiated directly by users of the ezapp framework.
 type App struct {
-
-	// services is a slice of Service implementations that will be managed by this App.
-	// All services will be started in parallel and stopped in the order they appear in this slice.
-	services []Service
-
-	// shutdownTimeout is the maximum duration allowed for services to gracefully shut down.
-	// If a service takes longer than this duration to stop, it will be forcefully terminated.
+	// shutdownTimeout is the maximum time allowed for stopping all runnables
 	shutdownTimeout time.Duration
 
-	// shutdownSig is a channel that, when closed, signals the App to initiate the shutdown process.
-	// This allows for external control of the application lifecycle.
-	shutdownSig <-chan struct{}
+	// runnables is the list of components managed by this application
+	runnables []Runnable
 
-	// errorHandler is a function that processes errors encountered during service operation.
-	// If nil, a default handler that panics will be used.
-	errorHandler ErrorHandler
+	// shutdownSig is a channel that signals when the application should shut down
+	shutdownSig <-chan error
+
+	// logger is used for application-level logging
+	logger *slog.Logger
 }
 
-// NewApp creates a new App with the given services, error handler, and shutdown signal.
-// It initializes an App instance with the provided parameters and sets default values where appropriate.
+// Run starts the application and blocks until the application exits.
+// This method implements the ezapp.EzApp interface.
 //
-// Parameters:
-//   - services: A slice of Service implementations that will be managed by this App.
-//   - errorHandler: A function to handle errors encountered during service operation.
-//     If nil, a default handler that panics will be used.
-//   - shutdownSig: A channel that, when closed, signals the App to initiate the shutdown process.
+// The Run method:
+// 1. Starts each runnable component in its own goroutine
+// 2. Waits for either an error from a runnable or a shutdown signal
+// 3. Initiates graceful shutdown of all runnables with a timeout
+// 4. Exits with status code 1 if any runnable fails to stop properly
 //
-// Returns:
-//   - A pointer to the newly created App instance, ready to be run.
-//   - An error if any of the inputs are invalid.
-func NewApp(services []Service, errorHandler ErrorHandler, shutdownSig <-chan struct{}) (*App, error) {
-	// Validate inputs
-	if services == nil {
-		return nil, errors.New("services cannot be nil")
-	}
-
-	if len(services) == 0 {
-		return nil, errors.New("services cannot be empty")
-	}
-
-	if shutdownSig == nil {
-		return nil, errors.New("shutdownSig cannot be nil")
-	}
-
-	// Default error handler that panics
-	if errorHandler == nil {
-		return nil, errors.New("errorHandler cannot be nil")
-	}
-
-	return &App{
-		services:        services,
-		shutdownTimeout: 15 * time.Second,
-		shutdownSig:     shutdownSig,
-		errorHandler:    errorHandler,
-	}, nil
-}
-
-// Run starts all services managed by this App and coordinates their lifecycle.
-// It performs the following operations:
-//  1. Starts each service in its own goroutine
-//  2. Waits for either a shutdown signal or an error from any service
-//  3. Initiates graceful shutdown of all services when either occurs
-//  4. Handles any errors that occur during startup or shutdown
-//  5. Waits for all services to complete before returning
-//
-// This method blocks until all services have been stopped, either due to
-// receiving a shutdown signal or encountering an error.
+// This method blocks until all runnables have been stopped or the
+// shutdown timeout is reached.
 func (a *App) Run() {
 
-	// Create a WaitGroup to track all running services
-	var wg sync.WaitGroup
+	a.logger.Info("Starting application")
 
-	// Create channels for error handling
-	errChan := make(chan error, len(a.services))
+	// Create a channel to receive errors from runnables
+	errChan := make(chan error, len(a.runnables))
 
-	// Start each service in its own goroutine
-	for _, service := range a.services {
-		wg.Add(1)
-		go func(s Service) {
-			defer wg.Done()
-			if err := s.Run(); err != nil {
+	// Start each runnable in its own goroutine
+	for _, runnable := range a.runnables {
+		go func(r Runnable) {
+			if err := r.Run(); err != nil {
 				errChan <- err
 			}
-		}(service)
+		}(runnable)
 	}
 
-	// Wait for shutdown signal or error
+	// Wait for an error from a runnable or a shutdown signal
+	var err error
 	select {
-	case <-a.shutdownSig:
-		// Shutdown signal received, stop all services
-	case err := <-errChan:
-		// Service error occurred, handle it and proceed with shutdown
-		if a.errorHandler != nil {
-			_ = a.errorHandler(err)
-		}
+	case err = <-errChan:
+		a.logger.Error("Runnable error detected, initiating shutdown", "error", err)
+	case err = <-a.shutdownSig:
+		a.logger.Info("Shutdown signal received, initiating shutdown", "error", err)
 	}
 
-	// Create a context with timeout for graceful shutdown
+	// When shutting down, use the shutdownTimeout to create a context with a deadline
 	ctx, cancel := context.WithTimeout(context.Background(), a.shutdownTimeout)
 	defer cancel()
 
-	// Stop all services
-	for _, service := range a.services {
-		if err := service.Stop(ctx); err != nil {
-			// Handle the error using the error handler
-			if a.errorHandler != nil {
-				_ = a.errorHandler(err)
+	// Stop all runnables with the timeout context
+	for _, runnable := range a.runnables {
+		if stopErr := runnable.Stop(ctx); stopErr != nil {
+			a.logger.Error("Failed to stop runnable", "error", stopErr)
+			if errors.Is(stopErr, context.DeadlineExceeded) {
+				a.logger.Error("Stop timed out and app shutdown was forced")
 			}
+			os.Exit(1)
 		}
 	}
-
-	// Wait for all services to finish
-	wg.Wait()
-
 }
