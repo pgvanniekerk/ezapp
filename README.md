@@ -340,7 +340,8 @@ Sets the handler for critical errors from runnables. By default, the framework u
 ```go
 // Use a custom critical error handler that logs the error and exits
 appwire.WithCriticalErrHandler(func(err error) {
-    log.Fatalf("Critical error: %v", err)
+    slog.Error("Critical error occurred", "error", err)
+    os.Exit(1)
 })
 ```
 

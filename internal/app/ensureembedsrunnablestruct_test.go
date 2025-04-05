@@ -55,6 +55,10 @@ func (b *BadRunnable) Stop(ctx context.Context) error {
 	return nil
 }
 
+func (b *BadRunnable) NotifyCriticalError(err error) {
+	// Do nothing
+}
+
 // NonStruct is a type that's not a struct but implements the Runnable interface
 type NonStruct func()
 
@@ -64,4 +68,8 @@ func (n NonStruct) Run() error {
 
 func (n NonStruct) Stop(ctx context.Context) error {
 	return nil
+}
+
+func (n NonStruct) NotifyCriticalError(err error) {
+	// Do nothing
 }

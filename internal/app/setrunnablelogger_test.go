@@ -90,6 +90,10 @@ func (r *RunnableWithoutEmbedding) Stop(ctx context.Context) error {
 	return nil
 }
 
+func (r *RunnableWithoutEmbedding) NotifyCriticalError(err error) {
+	// Do nothing
+}
+
 // NonStructRunnable is a type that's not a struct but implements the Runnable interface
 type NonStructRunnable func()
 
@@ -99,4 +103,8 @@ func (n NonStructRunnable) Run() error {
 
 func (n NonStructRunnable) Stop(ctx context.Context) error {
 	return nil
+}
+
+func (n NonStructRunnable) NotifyCriticalError(err error) {
+	// Do nothing
 }
