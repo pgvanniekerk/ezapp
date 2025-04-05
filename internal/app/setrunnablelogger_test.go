@@ -62,7 +62,7 @@ func (r *RunnableWithLogger) Run() error {
 	return nil
 }
 
-func (r *RunnableWithLogger) Stop(ctx context.Context) error {
+func (r *RunnableWithLogger) Stop(_ context.Context) error {
 	return nil
 }
 
@@ -75,7 +75,7 @@ func (r *RunnableWithoutTag) Run() error {
 	return nil
 }
 
-func (r *RunnableWithoutTag) Stop(ctx context.Context) error {
+func (r *RunnableWithoutTag) Stop(_ context.Context) error {
 	return nil
 }
 
@@ -86,7 +86,7 @@ func (r *RunnableWithoutEmbedding) Run() error {
 	return nil
 }
 
-func (r *RunnableWithoutEmbedding) Stop(ctx context.Context) error {
+func (r *RunnableWithoutEmbedding) Stop(_ context.Context) error {
 	return nil
 }
 
@@ -101,10 +101,10 @@ func (n NonStructRunnable) Run() error {
 	return nil
 }
 
-func (n NonStructRunnable) Stop(ctx context.Context) error {
+func (n NonStructRunnable) Stop(_ context.Context) error {
 	return nil
 }
 
-func (n NonStructRunnable) NotifyCriticalError(err error) {
+func (n NonStructRunnable) NotifyCriticalError(_ error) {
 	// Do nothing
 }

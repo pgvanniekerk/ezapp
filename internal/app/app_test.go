@@ -147,7 +147,7 @@ func (m *MockRunnable) Run() error {
 	return nil
 }
 
-func (m *MockRunnable) Stop(ctx context.Context) error {
+func (m *MockRunnable) Stop(_ context.Context) error {
 	m.stopCalled = true
 	return nil
 }
