@@ -23,11 +23,17 @@ func Build[C any](wireFunc WireFunc[C], options BuildOptions) EzApp {
 		panic("options cannot be nil")
 	}
 
-	// Get build options
-	errorHandler := options.GetErrorHandler()
-	startupTimeout := options.GetStartupTimeout()
-	envVarPrefix := options.GetEnvVarPrefix()
-	shutdownSignal := options.GetShutdownSignal()
+	serviceSet := invokeWireFunc(wireFunc, options.GetStartupTimeout(), options.GetEnvVarPrefix())
+
+	// Create a new App with the ServiceSet's services, error handler, and shutdown signal
+	ezApp, err := app.NewApp(serviceSet.Services, options.GetErrorHandler(), options.GetShutdownSignal())
+	if err != nil {
+		panic(err)
+	}
+	return ezApp
+}
+
+func invokeWireFunc[C any](wireFunc WireFunc[C], startupTimeout time.Duration, envVarPrefix string) ServiceSet {
 
 	// Create a context with the configured timeout
 	ctx, cancel := context.WithTimeout(context.Background(), startupTimeout)
@@ -47,8 +53,7 @@ func Build[C any](wireFunc WireFunc[C], options BuildOptions) EzApp {
 		panic(err)
 	}
 
-	// Create a new App with the ServiceSet's services, error handler, and shutdown signal
-	return app.NewApp(serviceSet.Services, errorHandler, shutdownSignal)
+	return serviceSet
 }
 
 // WireFunc is a function that returns a ServiceSet and an error
