@@ -25,10 +25,16 @@ func defaultOptions() (*appOptions, error) {
 	// Create a nil channel for shutdownSig
 	var shutdownSig <-chan error
 
+	// Create a default critical error handler that panics with the error
+	defaultCriticalErrHandler := func(err error) {
+		panic(fmt.Sprintf("Critical error: %v", err))
+	}
+
 	return &appOptions{
-		appConf:     appConf,
-		shutdownSig: shutdownSig,
-		logger:      logger,
-		logAttrs:    []slog.Attr{},
+		appConf:            appConf,
+		shutdownSig:        shutdownSig,
+		logger:             logger,
+		logAttrs:           []slog.Attr{},
+		criticalErrHandler: defaultCriticalErrHandler,
 	}, nil
 }

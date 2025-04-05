@@ -46,4 +46,11 @@ type Params struct {
 	//
 	// Default: Empty slice (set by wire.defaultOptions)
 	LogAttrs []slog.Attr
+
+	// CriticalErrHandler is a function that handles critical errors from runnables.
+	// This function will be called when a runnable reports a critical error.
+	//
+	// Default: A function that panics with the error
+	// (set by wire.defaultOptions)
+	CriticalErrHandler func(error)
 }

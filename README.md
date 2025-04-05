@@ -202,6 +202,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
+	"os"
 	"time"
 
 	"github.com/yourusername/myapp/internal/config"
@@ -331,6 +333,18 @@ Sets the channel for receiving shutdown signals.
 appwire.WithShutdownSignal(customShutdownChan)
 ```
 
+### WithCriticalErrHandler
+
+Sets the handler for critical errors from runnables. By default, the framework uses a handler that panics with the error message.
+
+```go
+// Use a custom critical error handler that logs the error and exits
+appwire.WithCriticalErrHandler(func(err error) {
+    slog.Error("Critical error occurred", "error", err)
+    os.Exit(1)
+})
+```
+
 ## Example Usage
 
 Here's an example of how to use these options together:
@@ -361,6 +375,13 @@ func Build(startupCtx context.Context, cfg config.Config) (*app.App, error) {
 			slog.String("app", cfg.AppName),
 			slog.String("env", "production"),
 		),
+
+		// Configure custom critical error handler
+		appwire.WithCriticalErrHandler(func(err error) {
+			// Log the error and exit with status code 1
+			slog.Error("Critical error occurred", "error", err)
+			os.Exit(1)
+		}),
 	)
 }
 ```
@@ -371,11 +392,13 @@ func Build(startupCtx context.Context, cfg config.Config) (*app.App, error) {
 
 2. **Handle Errors Properly**: Return errors from `Run` only for critical failures that should trigger application shutdown.
 
-3. **Respect Context Cancellation**: In the `Stop` method, respect the context deadline to ensure graceful shutdown.
+3. **Use Critical Error Handling**: The framework provides a critical error handling mechanism through the `NotifyCriticalError` method on the `Runnable` interface. By default, critical errors are handled by a panic handler that terminates the application with the error message. You can customize this behavior using the `WithCriticalErrHandler` option.
 
-4. **Use Dependency Injection**: Pass dependencies to runnable components through constructor functions.
+4. **Respect Context Cancellation**: In the `Stop` method, respect the context deadline to ensure graceful shutdown.
 
-5. **Configure Timeouts Appropriately**: Set appropriate shutdown and startup timeouts based on your application's needs.
+5. **Use Dependency Injection**: Pass dependencies to runnable components through constructor functions.
+
+6. **Configure Timeouts Appropriately**: Set appropriate shutdown and startup timeouts based on your application's needs.
 
 ## Examples
 

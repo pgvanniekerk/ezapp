@@ -11,7 +11,7 @@ import (
 // The Runnable interface defines three methods:
 //   - Run: Called to start the component, returns an error if it fails
 //   - Stop: Called to stop the component with a context that may include a deadline
-//   - Sentinel: A marker method used to identify types that embed the ezapp.Runnable struct
+//   - NotifyCriticalError: Called to notify the App of a critical error
 //
 // This interface is used internally by the ezapp framework and is not meant to be
 // implemented directly by users. Instead, users should embed the ezapp.Runnable
@@ -28,8 +28,8 @@ type Runnable interface {
 	// Implementations should respect context cancellation.
 	Stop(context.Context) error
 
-	// Sentinel is a marker method used to identify types that embed
-	// the ezapp.Runnable struct. This method is used internally by
-	// the framework and should not be called directly.
-	Sentinel()
+	// NotifyCriticalError notifies the App of a critical error.
+	// This method is used to report critical errors that should be handled
+	// by the application's critical error handler.
+	NotifyCriticalError(error)
 }

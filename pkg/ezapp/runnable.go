@@ -13,9 +13,14 @@ import (
 // Structs that embed Runnable should override the Run and Stop methods
 // to implement their specific startup and shutdown logic.
 type Runnable struct {
+
 	// Logger is automatically injected by the application framework
 	// and can be used by the Runnable implementation for logging.
 	Logger *slog.Logger
+
+	// critErrChan is a write-only channel for reporting critical errors to the app.
+	// This channel is automatically injected by the application framework.
+	critErrChan chan<- error
 }
 
 // Run is called by ezapp when the application starts and is executed in a separate goroutine.
@@ -38,6 +43,9 @@ func (r Runnable) Stop(_ context.Context) error {
 	return nil
 }
 
-// Sentinel is a marker method used internally by the framework to identify
-// types that embed the Runnable struct.
-func (r Runnable) Sentinel() {}
+// NotifyCriticalError notifies the application of a critical error.
+// This method sends the provided error to the critical error channel,
+// which is handled by the application's critical error handler.
+func (r Runnable) NotifyCriticalError(err error) {
+	r.critErrChan <- err
+}
