@@ -26,6 +26,12 @@ type App struct {
 
 	// logger is used for application-level logging
 	logger *slog.Logger
+
+	// critErrChan is a channel that receives critical errors from runnables
+	critErrChan chan error
+
+	// criticalErrHandler is a function that handles critical errors
+	criticalErrHandler func(error)
 }
 
 // Run starts the application and blocks until the application exits.
@@ -46,11 +52,23 @@ func (a *App) Run() {
 	// Create a channel to receive errors from runnables
 	errChan := make(chan error, len(a.runnables))
 
+	// Start a goroutine to handle critical errors
+	go func() {
+		for err := range a.critErrChan {
+			if a.criticalErrHandler != nil {
+				a.logger.Error("Critical error detected, calling handler", "error", err)
+				a.criticalErrHandler(err)
+			}
+		}
+	}()
+
 	// Start each runnable in its own goroutine
 	for _, runnable := range a.runnables {
 		go func(r Runnable) {
 			if err := r.Run(); err != nil {
 				errChan <- err
+				// Also notify about the error as a critical error
+				r.NotifyCriticalError(err)
 			}
 		}(runnable)
 	}

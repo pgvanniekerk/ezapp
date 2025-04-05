@@ -21,6 +21,9 @@ type appOptions struct {
 
 	// logAttrs are additional attributes to add to log entries
 	logAttrs []slog.Attr
+
+	// criticalErrHandler is a function that handles critical errors from runnables
+	criticalErrHandler func(error)
 }
 
 // AppOption is a function that configures the App function.

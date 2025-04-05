@@ -64,11 +64,12 @@ func App(runnablesFunc func() []app.Runnable, opts ...AppOption) (*app.App, erro
 
 	// Create a new app with the configured parameters
 	params := app.Params{
-		ShutdownTimeout: options.appConf.ShutdownTimeout,
-		Runnables:       runnables,
-		ShutdownSig:     options.shutdownSig,
-		Logger:          options.logger,
-		LogAttrs:        options.logAttrs,
+		ShutdownTimeout:    options.appConf.ShutdownTimeout,
+		Runnables:          runnables,
+		ShutdownSig:        options.shutdownSig,
+		Logger:             options.logger,
+		LogAttrs:           options.logAttrs,
+		CriticalErrHandler: options.criticalErrHandler,
 	}
 
 	appInstance, err := app.New(params)
