@@ -40,7 +40,7 @@ func (g *GoodRunnable) Run() error {
 	return nil
 }
 
-func (g *GoodRunnable) Stop(ctx context.Context) error {
+func (g *GoodRunnable) Stop(_ context.Context) error {
 	return nil
 }
 
@@ -51,11 +51,11 @@ func (b *BadRunnable) Run() error {
 	return nil
 }
 
-func (b *BadRunnable) Stop(ctx context.Context) error {
+func (b *BadRunnable) Stop(_ context.Context) error {
 	return nil
 }
 
-func (b *BadRunnable) NotifyCriticalError(err error) {
+func (b *BadRunnable) NotifyCriticalError(_ error) {
 	// Do nothing
 }
 
@@ -66,10 +66,10 @@ func (n NonStruct) Run() error {
 	return nil
 }
 
-func (n NonStruct) Stop(ctx context.Context) error {
+func (n NonStruct) Stop(_ context.Context) error {
 	return nil
 }
 
-func (n NonStruct) NotifyCriticalError(err error) {
+func (n NonStruct) NotifyCriticalError(_ error) {
 	// Do nothing
 }

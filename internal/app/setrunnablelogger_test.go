@@ -90,7 +90,7 @@ func (r *RunnableWithoutEmbedding) Stop(_ context.Context) error {
 	return nil
 }
 
-func (r *RunnableWithoutEmbedding) NotifyCriticalError(err error) {
+func (r *RunnableWithoutEmbedding) NotifyCriticalError(_ error) {
 	// Do nothing
 }
 
