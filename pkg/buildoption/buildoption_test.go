@@ -11,10 +11,10 @@ import (
 func TestWithoutOptions(t *testing.T) {
 	options := WithoutOptions()
 
-	// Check that the returned value is of type *Options
-	_, ok := options.(*Options)
+	// Check that the returned value is of type *options
+	_, ok := options.(*options)
 	if !ok {
-		t.Errorf("WithoutOptions() returned %T, want *Options", options)
+		t.Errorf("WithoutOptions() returned %T, want *options", options)
 	}
 
 	// Check default values
@@ -56,10 +56,10 @@ func TestWithOptions(t *testing.T) {
 		WithErrorHandler(customErrorHandler),
 	)
 
-	// Check that the returned value is of type *Options
-	_, ok := options.(*Options)
+	// Check that the returned value is of type *options
+	_, ok := options.(*options)
 	if !ok {
-		t.Errorf("WithOptions() returned %T, want *Options", options)
+		t.Errorf("WithOptions() returned %T, want *options", options)
 	}
 
 	// Check custom values
@@ -118,7 +118,7 @@ func TestGetErrorHandler(t *testing.T) {
 	customErrorHandler := func(err error) error { return nil }
 
 	// Create options with custom error handler
-	options := &Options{
+	options := &options{
 		ErrorHandler: customErrorHandler,
 	}
 
@@ -132,7 +132,7 @@ func TestGetErrorHandler(t *testing.T) {
 func TestGetStartupTimeout(t *testing.T) {
 	// Create options with custom timeout
 	customTimeout := 30 * time.Second
-	options := &Options{
+	options := &options{
 		StartupTimeout: customTimeout,
 	}
 
@@ -146,7 +146,7 @@ func TestGetStartupTimeout(t *testing.T) {
 func TestGetEnvVarPrefix(t *testing.T) {
 	// Create options with custom prefix
 	customPrefix := "TEST_"
-	options := &Options{
+	options := &options{
 		EnvVarPrefix: customPrefix,
 	}
 
@@ -160,7 +160,7 @@ func TestGetEnvVarPrefix(t *testing.T) {
 func TestGetShutdownSignal(t *testing.T) {
 	// Test with custom shutdown signal
 	customShutdownSignal := make(chan struct{})
-	options := &Options{
+	options := &options{
 		ShutdownSignal: customShutdownSignal,
 	}
 
@@ -169,8 +169,8 @@ func TestGetShutdownSignal(t *testing.T) {
 		t.Errorf("GetShutdownSignal() returned wrong channel")
 	}
 
-	// Test with nil shutdown signal (should return DefaultShutdownSignal)
-	options = &Options{
+	// Test with nil shutdown signal (should return defaultShutdownSignal)
+	options = &options{
 		ShutdownSignal: nil,
 	}
 
@@ -180,21 +180,21 @@ func TestGetShutdownSignal(t *testing.T) {
 	}
 }
 
-// TestDefaultShutdownSignal tests the DefaultShutdownSignal function
+// TestDefaultShutdownSignal tests the defaultShutdownSignal function
 func TestDefaultShutdownSignal(t *testing.T) {
 	// Get the default shutdown signal
-	shutdownChan := DefaultShutdownSignal()
+	shutdownChan := defaultShutdownSignal()
 
 	// Check that it's not nil
 	if shutdownChan == nil {
-		t.Errorf("DefaultShutdownSignal() = nil, want non-nil")
+		t.Errorf("defaultShutdownSignal() = nil, want non-nil")
 	}
 
 	// Test that the channel closes when a signal is received
 	// This is a bit tricky to test without actually sending a signal
 	// We'll just check that the channel is of the right type
 	if reflect.TypeOf(shutdownChan).String() != "<-chan struct {}" {
-		t.Errorf("DefaultShutdownSignal() returned channel of type %v, want <-chan struct {}", reflect.TypeOf(shutdownChan))
+		t.Errorf("defaultShutdownSignal() returned channel of type %v, want <-chan struct {}", reflect.TypeOf(shutdownChan))
 	}
 }
 
@@ -222,8 +222,8 @@ func TestWithErrorHandler(t *testing.T) {
 	// Create an option with the custom error handler
 	option := WithErrorHandler(customErrorHandler)
 
-	// Apply the option to an Options struct
-	options := &Options{}
+	// Apply the option to an options struct
+	options := &options{}
 	option(options)
 
 	// Check that the error handler was set correctly
@@ -240,8 +240,8 @@ func TestWithStartupTimeout(t *testing.T) {
 	// Create an option with the custom timeout
 	option := WithStartupTimeout(customTimeout)
 
-	// Apply the option to an Options struct
-	options := &Options{}
+	// Apply the option to an options struct
+	options := &options{}
 	option(options)
 
 	// Check that the timeout was set correctly
@@ -258,8 +258,8 @@ func TestWithEnvVarPrefix(t *testing.T) {
 	// Create an option with the custom prefix
 	option := WithEnvVarPrefix(customPrefix)
 
-	// Apply the option to an Options struct
-	options := &Options{}
+	// Apply the option to an options struct
+	options := &options{}
 	option(options)
 
 	// Check that the prefix was set correctly
@@ -276,8 +276,8 @@ func TestWithShutdownSignal(t *testing.T) {
 	// Create an option with the custom shutdown signal
 	option := WithShutdownSignal(customShutdownSignal)
 
-	// Apply the option to an Options struct
-	options := &Options{}
+	// Apply the option to an options struct
+	options := &options{}
 	option(options)
 
 	// Check that the shutdown signal was set correctly
