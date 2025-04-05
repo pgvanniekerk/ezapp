@@ -34,7 +34,7 @@ func (r Runnable) Run() error {
 //
 // The provided context may include a deadline after which the shutdown
 // process will be aborted, so implementations should respect context cancellation.
-func (r Runnable) Stop(ctx context.Context) error {
+func (r Runnable) Stop(_ context.Context) error {
 	return nil
 }
 

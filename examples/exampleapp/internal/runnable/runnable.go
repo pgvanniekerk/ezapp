@@ -87,7 +87,7 @@ func (r *DBRunnable) Run() error {
 // Returns:
 //   - nil if the component stopped successfully
 //   - an error if the component failed to stop
-func (r *DBRunnable) Stop(ctx context.Context) error {
+func (r *DBRunnable) Stop(_ context.Context) error {
 	r.Logger.Info("DBRunnable stopping")
 
 	// Example: Close any resources that need to be cleaned up
