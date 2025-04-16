@@ -1,60 +1,41 @@
 package ezapp
 
 import (
-	"context"
-	"github.com/kelseyhightower/envconfig"
-	"github.com/pgvanniekerk/ezapp/internal/app"
-	"time"
+	"errors"
+	"fmt"
+	"reflect"
+
+	env "github.com/Netflix/go-env"
 )
 
-// BuildOptions is an interface for configuring the Build function
-type BuildOptions interface {
-	GetErrorHandler() app.ErrorHandler
-	GetStartupTimeout() time.Duration
-	GetEnvVarPrefix() string
-	GetShutdownSignal() <-chan struct{}
-}
+func Build[CONF any](builder Builder[CONF]) EzApp {
 
-// Build creates an EzApp from a WireFunc with configuration
-func Build[C any](wireFunc WireFunc[C], options BuildOptions) EzApp {
+	var conf CONF
 
-	// Panic if options is nil
-	if options == nil {
-		panic("options cannot be nil")
+	// Validate that CONF is a struct
+	if reflect.TypeOf(conf).Kind() != reflect.Struct {
+		return EzApp{
+			initErr: errors.New("CONF must be a struct"),
+		}
 	}
 
-	serviceSet := invokeWireFunc(wireFunc, options.GetStartupTimeout(), options.GetEnvVarPrefix())
+	// Use go-env to populate CONF from environment variables
+	if _, err := env.UnmarshalFromEnviron(&conf); err != nil {
+		return EzApp{
+			initErr: fmt.Errorf("failed to parse environment variables into CONF: %w", err),
+		}
+	}
 
-	// Create a new App with the ServiceSet's services, error handler, and shutdown signal
-	ezApp, err := app.NewApp(serviceSet.Services, options.GetErrorHandler(), options.GetShutdownSignal())
+	// Call the builder function to get the list of runnables
+	runnables, err := builder(conf)
 	if err != nil {
-		panic(err)
+		return EzApp{
+			initErr: err,
+		}
 	}
-	return ezApp
+
+	// Create and return a new EzApp with the runnables
+	return EzApp{
+		runnableList: runnables,
+	}
 }
-
-func invokeWireFunc[C any](wireFunc WireFunc[C], startupTimeout time.Duration, envVarPrefix string) ServiceSet {
-
-	// Create a context with the configured timeout
-	ctx, cancel := context.WithTimeout(context.Background(), startupTimeout)
-	defer cancel()
-
-	// Create a new instance of the config struct
-	var config C
-
-	// Load environment variables into the config struct with the configured prefix
-	if err := envconfig.Process(envVarPrefix, &config); err != nil {
-		panic(err)
-	}
-
-	// Call the wire function to get a ServiceSet
-	serviceSet, err := wireFunc(ctx, config)
-	if err != nil {
-		panic(err)
-	}
-
-	return serviceSet
-}
-
-// WireFunc is a function that returns a ServiceSet and an error
-type WireFunc[C any] func(context.Context, C) (ServiceSet, error)
