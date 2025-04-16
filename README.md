@@ -1,409 +1,181 @@
-# ezapp
+# EzApp
 
-ezapp is part of the ezGoing framework and streamlines application creation and wiring structure. It provides a lightweight framework for building Go applications with a focus on simplicity, testability, and maintainability. It also experimentally adds built-in support/context providing to the Junie AI tool - to allow Junie to know when and how to wire Runnables automatically.
+EzApp is a simple, lightweight framework for building Go applications. It provides a clean and structured way to:
 
-## Overview
+1. Load configuration from environment variables
+2. Wire together application components
+3. Run multiple services concurrently
+4. Handle errors and graceful shutdown
 
-ezapp helps you build applications by:
-
-1. Providing a consistent structure for your application components
-2. Managing the lifecycle of your application components
-3. Handling graceful shutdown of your application
-4. Simplifying dependency injection and wiring
-
-## Getting Started
-
-### Installation
+## Installation
 
 ```bash
 go get github.com/pgvanniekerk/ezapp
 ```
 
-## Step 1: Recommended App Structure
+## Usage
 
-The recommended structure for an ezapp application is:
+EzApp is designed to make it easy to wire together and execute applications. Here's a basic example of how to use it:
 
-```
-myapp/
-├── internal/
-│   ├── cmd/
-│   │   └── myapp.go       # Main entry point
-│   ├── config/
-│   │   └── config.go      # Configuration structures
-│   ├── runnable/
-│   │   └── runnable.go    # Example Runnable component 
-│   └── wire/
-│       └── wire.go        # Wiring code
-└── main.go                # Calls into cmd/myapp.go
-```
+### Recommended Structure
 
-The `runnable` folder is just an example - you are welcome to name your service component packages anything you want to.
+We recommend organizing your code with the configuration struct and builder function in their own `.go` file in an app package, separate from your main application code. This makes your code more modular and easier to maintain. It's especially recommended to have the builder function located in the app package rather than the main package.
 
-### Runnable Interface
-
-The `Runnable` interface is the core building block of ezapp applications. It defines components that can be started and stopped as part of the application lifecycle.
-
-Here's an example of a runnable component that prints the current time every second and stops when Stop is called:
-
-```go
-package runnable
-
-import (
-	"context"
-	"database/sql"
-	"log/slog"
-	"time"
-
-	"github.com/pgvanniekerk/ezapp/pkg/ezapp"
-)
-
-// TimeRunnable is an example runnable component that prints the current time
-// every second and queries the database for the system date.
-type TimeRunnable struct {
-	ezapp.Runnable // Embed the ezapp.Runnable struct
-	db *sql.DB     // Database connection
-	stopCh chan struct{} // Channel to signal stopping
-}
-
-// NewTimeRunnable creates a new TimeRunnable with the given database connection.
-func NewTimeRunnable(db *sql.DB) *TimeRunnable {
-	return &TimeRunnable{
-		db:     db,
-		stopCh: make(chan struct{}),
-	}
-}
-
-// Run starts the runnable component. It prints the current time every second
-// and queries the database for the system date.
-// If Stop is called, Run will stop and return nil.
-func (r *TimeRunnable) Run() error {
-	r.Logger.Info("TimeRunnable started")
-
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			// Print current time
-			now := time.Now()
-			r.Logger.Info("Current time", slog.Time("time", now))
-
-			// Query database for system date
-			var sysdate time.Time
-			err := r.db.QueryRow("SELECT CURRENT_TIMESTAMP").Scan(&sysdate)
-			if err != nil {
-				r.Logger.Error("Failed to query database", slog.String("error", err.Error()))
-				return err // Return error to trigger application shutdown
-			}
-
-			r.Logger.Info("Database system date", slog.Time("sysdate", sysdate))
-
-		case <-r.stopCh:
-			r.Logger.Info("TimeRunnable stopping due to stop signal")
-			return nil
-		}
-	}
-}
-
-// Stop signals the runnable to stop and cleans up resources.
-func (r *TimeRunnable) Stop(ctx context.Context) error {
-	r.Logger.Info("TimeRunnable stopping")
-
-	// Signal the Run method to stop
-	close(r.stopCh)
-
-	return nil
-}
-```
-
-## Step 2: Create config/config.go
-
-Create a configuration package with a struct compatible with the [envvar library](https://github.com/kelseyhightower/envconfig). This struct will hold configuration for your application, including database connection details.
-
-```go
-package config
-
-import (
-	"strconv"
-)
-
-// Config contains configuration for the application.
-// This struct is compatible with the envconfig library
-// (github.com/kelseyhightower/envconfig) for loading
-// configuration from environment variables.
-type Config struct {
-	// Database configuration
-	DB DBConf
-
-	// LogLevel sets the application's logging level
-	// Environment variable: LOG_LEVEL
-	// Default: info
-	LogLevel string `envvar:"LOG_LEVEL" default:"info"`
-
-	// AppName is the name of the application
-	// Environment variable: APP_NAME
-	// Required: true
-	AppName string `envvar:"APP_NAME" required:"true"`
-}
-
-// DBConf contains configuration for connecting to a database.
-type DBConf struct {
-	// Host is the database server hostname or IP address
-	// Environment variable: DB_HOST
-	// Default: localhost
-	Host string `envvar:"DB_HOST" default:"localhost"`
-
-	// Port is the database server port
-	// Environment variable: DB_PORT
-	// Default: 5432
-	Port int `envvar:"DB_PORT" default:"5432"`
-
-	// User is the database username
-	// Environment variable: DB_USER
-	// Default: postgres
-	User string `envvar:"DB_USER" default:"postgres"`
-
-	// Password is the database password
-	// Environment variable: DB_PASSWORD
-	// Default: postgres
-	Password string `envvar:"DB_PASSWORD" default:"postgres"`
-
-	// DBName is the name of the database to connect to
-	// Environment variable: DB_NAME
-	// Default: postgres
-	DBName string `envvar:"DB_NAME" default:"postgres"`
-
-	// SSLMode is the SSL mode to use for the connection
-	// Environment variable: DB_SSL_MODE
-	// Default: disable
-	SSLMode string `envvar:"DB_SSL_MODE" default:"disable"`
-}
-
-// GetConnectionString returns a formatted connection string for the database.
-func (c DBConf) GetConnectionString() string {
-	return "host=" + c.Host + 
-		" port=" + strconv.Itoa(c.Port) + 
-		" user=" + c.User + 
-		" password=" + c.Password + 
-		" dbname=" + c.DBName + 
-		" sslmode=" + c.SSLMode
-}
-```
-
-## Step 3: Create wire/wire.go
-
-Create a wire package with a Build function that matches ezapp.Builder and uses the elements/options of the wire package to create objects and provide runnable to wire.Runnables.
-
-```go
-package wire
-
-import (
-	"context"
-	"database/sql"
-	"fmt"
-	"log/slog"
-	"os"
-	"time"
-
-	"github.com/yourusername/myapp/internal/config"
-	"github.com/yourusername/myapp/internal/runnable"
-	"github.com/pgvanniekerk/ezapp/internal/app"
-	appwire "github.com/pgvanniekerk/ezapp/pkg/wire"
-)
-
-// Build creates an application with all dependencies wired up.
-// This function matches the ezapp.Builder signature and is used
-// with ezapp.Run to create and run the application.
-func Build(startupCtx context.Context, cfg config.Config) (*app.App, error) {
-	// Create database connection
-	db, err := createDBConnection(startupCtx, cfg.DB)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create database connection: %w", err)
-	}
-
-	// Create runnable component
-	timeRunnable := runnable.NewTimeRunnable(db)
-
-	// Create and return the app using the wire package
-	return appwire.App(
-		// Provide the runnable component to the application
-		appwire.Runnables(timeRunnable),
-
-		// Configure application timeouts
-		appwire.WithAppStartupTimeout(15*time.Second),
-		appwire.WithAppShutdownTimeout(15*time.Second),
-	)
-}
-
-// createDBConnection establishes a connection to the database.
-func createDBConnection(ctx context.Context, dbConf config.DBConf) (*sql.DB, error) {
-	// Open database connection
-	db, err := sql.Open("postgres", dbConf.GetConnectionString())
-	if err != nil {
-		return nil, fmt.Errorf("failed to open database connection: %w", err)
-	}
-
-	// Ping the database to verify connectivity
-	if err := db.PingContext(ctx); err != nil {
-		db.Close() // Close the connection if ping fails
-		return nil, fmt.Errorf("failed to ping database: %w", err)
-	}
-
-	// Configure connection pool settings
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
-
-	return db, nil
-}
-```
-
-## Step 4: Create /cmd/myapp/main.go
-
-Finally, create the main entry point for your application. This file will use the wire.Build function to create and run the application.
+#### main.go
 
 ```go
 package main
 
 import (
-	"github.com/yourusername/myapp/internal/wire"
 	"github.com/pgvanniekerk/ezapp/pkg/ezapp"
+	"myapp/app"
 )
 
 func main() {
-	// Run the application with the wire.Build function
-	ezapp.Run(wire.Build)
+  ezapp.Build(app.Builder).Run()
 }
 ```
 
-This simple main function uses ezapp.Run to start the application with the wire.Build function. The ezapp.Run function:
-
-1. Creates a background context
-2. Creates an empty Config (in a real application, you would load this from environment variables)
-3. Calls the Build function to create the application
-4. Runs the application
-
-## Wire Options
-
-The wire.App function accepts various options for configuring your application. Here are the available options:
-
-### WithAppShutdownTimeout
-
-Sets the maximum time allowed for stopping all runnables during application shutdown.
+#### app/builder.go
 
 ```go
-// Set shutdown timeout to 15 seconds
-appwire.WithAppShutdownTimeout(15*time.Second)
-```
+package app
 
-### WithAppStartupTimeout
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"github.com/pgvanniekerk/ezapp/pkg/ezapp"
+	_ "github.com/lib/pq" // PostgreSQL driver
+)
 
-Sets the maximum time allowed for starting all runnables during application startup.
+// Logger is a simple logging interface
+type Logger interface {
+	Info(format string, args ...interface{})
+	Error(format string, args ...interface{})
+}
 
-```go
-// Set startup timeout to 10 seconds
-appwire.WithAppStartupTimeout(10*time.Second)
-```
+// SimpleLogger implements the Logger interface
+type SimpleLogger struct{}
 
-### WithLogger
+// NewLogger creates a new SimpleLogger
+func NewLogger() *SimpleLogger {
+	return &SimpleLogger{}
+}
 
-Sets the logger for the application.
+// Info logs an informational message
+func (l *SimpleLogger) Info(format string, args ...interface{}) {
+	fmt.Printf("[INFO] "+format+"\n", args...)
+}
 
-```go
-// Use a custom logger
-appwire.WithLogger(slog.New(slog.NewTextHandler(os.Stdout, nil)))
-```
+// Error logs an error message
+func (l *SimpleLogger) Error(format string, args ...interface{}) {
+	fmt.Printf("[ERROR] "+format+"\n", args...)
+}
 
-### WithLogAttrs
+type Config struct {
+	// Your configuration fields here
+	Port        int    `env:"PORT" default:"8080"`
+	DatabaseURL string `env:"DATABASE_URL" required:"true"`
+}
 
-Adds attributes to log entries.
-
-```go
-// Add application name and version to log entries
-appwire.WithLogAttrs(slog.String("app", "myapp"), slog.Int("version", 1))
-```
-
-### WithShutdownSignal
-
-Sets the channel for receiving shutdown signals.
-
-```go
-// Use a custom shutdown signal channel
-appwire.WithShutdownSignal(customShutdownChan)
-```
-
-### WithCriticalErrHandler
-
-Sets the handler for critical errors from runnables. By default, the framework uses a handler that panics with the error message.
-
-```go
-// Use a custom critical error handler that logs the error and exits
-appwire.WithCriticalErrHandler(func(err error) {
-    slog.Error("Critical error occurred", "error", err)
-    os.Exit(1)
-})
-```
-
-## Example Usage
-
-Here's an example of how to use these options together:
-
-```go
-func Build(startupCtx context.Context, cfg config.Config) (*app.App, error) {
-	// Create database connection
-	db, err := createDBConnection(startupCtx, cfg.DB)
+// Builder is the function used for dependency injection and wiring
+// It connects services and dependencies together
+func Builder(config Config) ([]ezapp.Runnable, error) {
+	// Connect to the database
+	db, err := sql.Open("postgres", config.DatabaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create database connection: %w", err)
+		return nil, err
 	}
 
-	// Create runnable components
-	timeRunnable := runnable.NewTimeRunnable(db)
-	httpRunnable := runnable.NewHTTPRunnable(cfg.Port)
+	// Create a logger (not shown in this basic example)
+	logger := NewLogger()
 
-	// Create and return the app using the wire package
-	return appwire.App(
-		// Provide multiple runnable components
-		appwire.Runnables(timeRunnable, httpRunnable),
+	// Create a server with the database connection
+	server := NewServer(config.Port, db, logger, func() error {
+		return db.Close()
+	})
 
-		// Configure application timeouts
-		appwire.WithAppStartupTimeout(15*time.Second),
-		appwire.WithAppShutdownTimeout(15*time.Second),
-
-		// Configure logging
-		appwire.WithLogAttrs(
-			slog.String("app", cfg.AppName),
-			slog.String("env", "production"),
-		),
-
-		// Configure custom critical error handler
-		appwire.WithCriticalErrHandler(func(err error) {
-			// Log the error and exit with status code 1
-			slog.Error("Critical error occurred", "error", err)
-			os.Exit(1)
-		}),
-	)
+	// Return the list of runnables
+	return []ezapp.Runnable{server}, nil
 }
 ```
 
-## Best Practices
+### Runnable Interface
 
-1. **Keep Runnables Focused**: Each runnable component should have a single responsibility.
+To be used with EzApp, your services must implement the `Runnable` interface:
 
-2. **Handle Errors Properly**: Return errors from `Run` only for critical failures that should trigger application shutdown.
+```go
+type Runnable interface {
+	Run(context.Context) error
+}
+```
 
-3. **Use Critical Error Handling**: The framework provides a critical error handling mechanism through the `NotifyCriticalError` method on the `Runnable` interface. By default, critical errors are handled by a panic handler that terminates the application with the error message. You can customize this behavior using the `WithCriticalErrHandler` option.
+The `Run(context.Context)` method starts the service and should only return an error in exceptional circumstances such as dependency failures or timeouts (application-impacting errors). The context parameter can be used to detect when the application is shutting down, allowing for graceful termination of long-running operations.
 
-4. **Respect Context Cancellation**: In the `Stop` method, respect the context deadline to ensure graceful shutdown.
+**Note:** The `EzApp.Run()` method itself does not return an error. Instead, it prints appropriate messages to the console about why the app is shutting down and handles graceful exit in all cases.
 
-5. **Use Dependency Injection**: Pass dependencies to runnable components through constructor functions.
+Here's an example of how to implement the Runnable interface:
 
-6. **Configure Timeouts Appropriately**: Set appropriate shutdown and startup timeouts based on your application's needs.
+```go
+package app
 
-## Examples
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"database/sql"
+)
 
-See the [examples/exampleapp](examples/exampleapp) directory for a complete example of an ezapp application.
+type Server struct {
+	server  *http.Server
+	logger  Logger
+	cleanup func() error
+}
+
+func NewServer(port int, db *sql.DB, logger Logger, cleanup func() error) *Server {
+	return &Server{
+		server: &http.Server{
+			Addr: fmt.Sprintf(":%d", port),
+		},
+		logger: logger,
+		cleanup: cleanup,
+	}
+}
+
+func (s *Server) Run(ctx context.Context) error {
+	s.logger.Info("Starting server on %s", s.server.Addr)
+
+	// Start a goroutine to listen for context cancellation
+	go func() {
+		<-ctx.Done()
+		// Context was cancelled, shut down the server
+		s.logger.Info("Shutting down server")
+		s.server.Shutdown(context.Background())
+		// Clean up resources
+		if s.cleanup != nil {
+			s.logger.Info("Cleaning up resources")
+			s.cleanup()
+		}
+	}()
+
+	// Start the server
+	if err := s.server.ListenAndServe(); err != http.ErrServerClosed {
+		s.logger.Error("Server error: %v", err)
+		return err
+	}
+	return nil
+}
+```
+
+## Features
+
+- **Environment-based Configuration**: Automatically loads configuration from environment variables using the [go-env](https://github.com/Netflix/go-env) package.
+- **Graceful Shutdown**: Handles SIGINT and SIGTERM signals to gracefully shut down your application.
+- **Concurrent Execution**: Runs multiple services concurrently in separate goroutines.
+- **Error Handling**: Provides a structured way to handle errors at both the service and application levels.
+- **Type Safety with Generics**: Uses Go generics to provide type safety for your configuration.
 
 ## License
 
-[MIT](LICENSE)
+This project is licensed under the MIT License - see the LICENSE file for details.
