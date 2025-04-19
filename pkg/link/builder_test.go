@@ -19,7 +19,7 @@ type MockBuilder struct {
 }
 
 // Build returns a MockStruct
-func (b MockBuilder) Build(ctx context.Context) (MockStruct, error) {
+func (b MockBuilder) Build(_ context.Context) (MockStruct, error) {
 	return MockStruct{Value: b.Value}, nil
 }
 
@@ -36,8 +36,6 @@ func TestBuilderWithStruct(t *testing.T) {
 	// Verify that the container is not nil
 	assert.NotNil(t, container, "The container should not be nil")
 
-	// TODO: Once the Builder function is implemented, add assertions to verify
-	// that the MockStruct was provided to the container
 }
 
 // MockBuilderPtr implements the builder interface for *MockStruct
@@ -46,7 +44,7 @@ type MockBuilderPtr struct {
 }
 
 // Build returns a pointer to MockStruct
-func (b MockBuilderPtr) Build(ctx context.Context) (*MockStruct, error) {
+func (b MockBuilderPtr) Build(_ context.Context) (*MockStruct, error) {
 	return &MockStruct{Value: b.Value}, nil
 }
 
@@ -63,6 +61,4 @@ func TestBuilderWithPointer(t *testing.T) {
 	// Verify that the container is not nil
 	assert.NotNil(t, container, "The container should not be nil")
 
-	// TODO: Once the Builder function is implemented, add assertions to verify
-	// that the *MockStruct was provided to the container
 }
