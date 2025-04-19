@@ -8,6 +8,7 @@ import (
 type BuildContext interface {
 	Container() *dig.Container
 	InitTimeout() context.Context
+	Modules() []Module
 }
 
 // buildContext implements the BuildContext interface
