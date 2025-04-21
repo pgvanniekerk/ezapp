@@ -32,7 +32,7 @@ import (
 )
 
 func main() {
-  ezapp.Build(app.Builder).Run()
+  ezapp.Run(app.Builder)
 }
 ```
 

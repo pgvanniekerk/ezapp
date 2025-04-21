@@ -2,33 +2,51 @@ package ezapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
+	"reflect"
 	"sync"
 	"syscall"
+
+	"github.com/Netflix/go-env"
 )
 
-// osExit is a package-level variable that can be overridden during tests
 var osExit = os.Exit
 
-type EzApp struct {
-	runnableList []Runnable
-	initErr      error
-}
+// Run creates an application from the provided builder function and runs it.
+// It executes the builder to get runnables, then starts all runnables while listening for stop signals.
+func Run[CONF any](builder Builder[CONF]) {
+	var conf CONF
 
-func (e EzApp) Run() {
-
-	// Check if there was an initialization error
-	if e.initErr != nil {
-		fmt.Printf("App shutting down: Initialization error: %v\n", e.initErr)
+	// Validate that CONF is a struct
+	if reflect.TypeOf(conf).Kind() != reflect.Struct {
+		fmt.Printf("App shutting down: Initialization error: %v\n", errors.New("CONF must be a struct"))
 		osExit(1)
+		return
+	}
+
+	// Use go-env to populate CONF from environment variables
+	if _, err := env.UnmarshalFromEnviron(&conf); err != nil {
+		fmt.Printf("App shutting down: Initialization error: %v\n", fmt.Errorf("failed to parse environment variables into CONF: %w", err))
+		osExit(1)
+		return
+	}
+
+	// Call the builder function to get the list of runnables
+	runnables, err := builder(conf)
+	if err != nil {
+		fmt.Printf("App shutting down: Initialization error: %v\n", err)
+		osExit(1)
+		return
 	}
 
 	// Check if there are any runnables to run
-	if len(e.runnableList) == 0 {
+	if len(runnables) == 0 {
 		fmt.Println("App shutting down: No runnables to execute")
 		osExit(0)
+		return
 	}
 
 	// Create a cancellable context
@@ -41,13 +59,13 @@ func (e EzApp) Run() {
 	defer signal.Stop(sigChan) // Stop signal handling when done
 
 	// Create error channel to collect errors from runnables
-	errChan := make(chan error, len(e.runnableList))
+	errChan := make(chan error, len(runnables))
 
 	// Create a wait group to wait for all runnables to finish
 	var wg sync.WaitGroup
 
 	// Start all runnables
-	for _, runnable := range e.runnableList {
+	for _, runnable := range runnables {
 		wg.Add(1)
 		go func(r Runnable) {
 			defer wg.Done()
@@ -87,6 +105,7 @@ func (e EzApp) Run() {
 		// All runnables finished successfully
 		fmt.Println("App shutting down: All runnables completed successfully")
 		osExit(0) // Exit immediately with success code
+		return
 	}
 
 	// Wait for all runnables to finish
