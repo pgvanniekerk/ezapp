@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestConfig is a test configuration struct
@@ -115,15 +116,17 @@ func TestRunWithMockExit(t *testing.T) {
 	}()
 
 	// Create a mock builder that returns a successful runnable
-	mockBuilder := func(conf TestConfig) ([]Runnable, error) {
-		return []Runnable{
-			mockRunnable{
-				runFunc: func(ctx context.Context) error {
-					// This runnable completes successfully immediately
-					return nil
+	mockBuilder := func(conf TestConfig) (App, error) {
+		return Construct(
+			WithRunnables(
+				mockRunnable{
+					runFunc: func(ctx context.Context) error {
+						// This runnable completes successfully immediately
+						return nil
+					},
 				},
-			},
-		}, nil
+			),
+		), nil
 	}
 
 	// Call the Run function with captureOutput to handle the panic
@@ -159,8 +162,8 @@ func TestRunWithError(t *testing.T) {
 
 	// Create a mock builder that returns an error
 	expectedError := errors.New("builder error")
-	mockBuilder := func(conf TestConfig) ([]Runnable, error) {
-		return nil, expectedError
+	mockBuilder := func(conf TestConfig) (App, error) {
+		return App{}, expectedError
 	}
 
 	// Call the Run function with captureOutput to handle the panic
@@ -201,14 +204,16 @@ func TestRunWithRunnableError(t *testing.T) {
 	}()
 
 	// Create a mock builder that returns a runnable that returns an error
-	mockBuilder := func(conf TestConfig) ([]Runnable, error) {
-		return []Runnable{
-			mockRunnable{
-				runFunc: func(ctx context.Context) error {
-					return errors.New("runnable error")
+	mockBuilder := func(conf TestConfig) (App, error) {
+		return Construct(
+			WithRunnables(
+				mockRunnable{
+					runFunc: func(ctx context.Context) error {
+						return errors.New("runnable error")
+					},
 				},
-			},
-		}, nil
+			),
+		), nil
 	}
 
 	// Call the Run function with captureOutput to handle the panic
@@ -249,8 +254,8 @@ func TestRunWithNoRunnables(t *testing.T) {
 	}()
 
 	// Create a mock builder that returns no runnables
-	mockBuilder := func(conf TestConfig) ([]Runnable, error) {
-		return []Runnable{}, nil
+	mockBuilder := func(conf TestConfig) (App, error) {
+		return Construct(), nil
 	}
 
 	// Call the Run function with captureOutput to handle the panic
@@ -273,4 +278,160 @@ func TestRunWithNoRunnables(t *testing.T) {
 func TestRunWithInvalidConfig(t *testing.T) {
 	// Skip this test for now as it's hard to test with generics
 	t.Skip("Skipping TestRunWithInvalidConfig as it's hard to test with generics")
+}
+
+// TestRunWithCleanup tests the Run function with a cleanup function
+func TestRunWithCleanup(t *testing.T) {
+	// Save the original osExit function and restore it after the test
+	originalExit := osExit
+	defer func() {
+		osExit = originalExit
+	}()
+
+	// Create a mock exit function that records the exit code
+	testExitCode = 0 // Reset the exit code
+	osExit = func(code int) {
+		testExitCode = code
+		panic(exitError{code: code})
+	}
+
+	// Set environment variables for the test
+	os.Setenv("TEST_STRING", "test-value")
+	defer func() {
+		os.Unsetenv("TEST_STRING")
+	}()
+
+	// Track if cleanup was called
+	cleanupCalled := false
+
+	// Create a mock builder that returns a successful runnable and a cleanup function
+	mockBuilder := func(conf TestConfig) (App, error) {
+		return Construct(
+			WithRunnables(
+				mockRunnable{
+					runFunc: func(ctx context.Context) error {
+						// This runnable completes successfully immediately
+						return nil
+					},
+				},
+			),
+			WithCleanup(func(ctx context.Context) error {
+				cleanupCalled = true
+				return nil
+			}),
+		), nil
+	}
+
+	// Call the Run function with captureOutput to handle the panic
+	output := captureOutput(func() {
+		Run(mockBuilder)
+	})
+
+	// Check that the output contains the success message
+	if !strings.Contains(output, "App shutting down: All runnables completed successfully") {
+		t.Errorf("Expected output to contain success message, got: %q", output)
+	}
+
+	// Check that the cleanup function was called
+	if !cleanupCalled {
+		t.Errorf("Expected cleanup function to be called")
+	}
+
+	// Assert that the exit code is 0 (success)
+	if testExitCode != 0 {
+		t.Errorf("Expected exit code to be 0, but got %d", testExitCode)
+	}
+}
+
+// TestRunWithCleanupError tests the Run function with a cleanup function that returns an error
+func TestRunWithCleanupError(t *testing.T) {
+	// Save the original osExit function and restore it after the test
+	originalExit := osExit
+	defer func() {
+		osExit = originalExit
+	}()
+
+	// Create a mock exit function that records the exit code
+	testExitCode = 0 // Reset the exit code
+	osExit = func(code int) {
+		testExitCode = code
+		panic(exitError{code: code})
+	}
+
+	// Set environment variables for the test
+	os.Setenv("TEST_STRING", "test-value")
+	defer func() {
+		os.Unsetenv("TEST_STRING")
+	}()
+
+	// Track if cleanup was called
+	cleanupCalled := false
+
+	// Create a mock builder that returns a successful runnable and a cleanup function that returns an error
+	mockBuilder := func(conf TestConfig) (App, error) {
+		return Construct(
+			WithRunnables(
+				mockRunnable{
+					runFunc: func(ctx context.Context) error {
+						// This runnable completes successfully immediately
+						return nil
+					},
+				},
+			),
+			WithCleanup(func(ctx context.Context) error {
+				cleanupCalled = true
+				return errors.New("cleanup error")
+			}),
+		), nil
+	}
+
+	// Call the Run function with captureOutput to handle the panic
+	output := captureOutput(func() {
+		Run(mockBuilder)
+	})
+
+	// Check that the output contains the success message for the runnable
+	if !strings.Contains(output, "App shutting down: All runnables completed successfully") {
+		t.Errorf("Expected output to contain success message, got: %q", output)
+	}
+
+	// Check that the output contains the cleanup error message
+	if !strings.Contains(output, "Cleanup error: cleanup error") {
+		t.Errorf("Expected output to contain cleanup error message, got: %q", output)
+	}
+
+	// Check that the cleanup function was called
+	if !cleanupCalled {
+		t.Errorf("Expected cleanup function to be called")
+	}
+
+	// Assert that the exit code is 1 (error)
+	if testExitCode != 1 {
+		t.Errorf("Expected exit code to be 1, but got %d", testExitCode)
+	}
+}
+
+// TestGetCleanupTimeout tests the GetCleanupTimeout function
+func TestGetCleanupTimeout(t *testing.T) {
+	// Test default timeout (15 seconds)
+	os.Unsetenv("EZAPP_TERM_TIMEOUT")
+	timeout := GetCleanupTimeout()
+	if timeout != 15*time.Second {
+		t.Errorf("Expected default timeout to be 15 seconds, got %v", timeout)
+	}
+
+	// Test with a valid timeout value
+	os.Setenv("EZAPP_TERM_TIMEOUT", "30")
+	defer os.Unsetenv("EZAPP_TERM_TIMEOUT")
+	timeout = GetCleanupTimeout()
+	if timeout != 30*time.Second {
+		t.Errorf("Expected timeout to be 30 seconds, got %v", timeout)
+	}
+
+	// Test with an invalid timeout value (should use default)
+	os.Setenv("EZAPP_TERM_TIMEOUT", "invalid")
+	timeout = GetCleanupTimeout()
+	if timeout != 15*time.Second {
+		t.Errorf("Expected timeout to be 15 seconds for invalid input, got %v", timeout)
+	}
 }
