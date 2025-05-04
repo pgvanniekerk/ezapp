@@ -1,12 +1,14 @@
-package link
+package container
 
 import (
 	"context"
-	"github.com/pgvanniekerk/ezapp/internal/container"
-	"github.com/pgvanniekerk/ezapp/internal/primitive"
+	"errors"
 	"go.uber.org/dig"
 	"reflect"
 )
+
+// ErrInitMethodNotFound is returned when a component doesn't have an Init method
+var ErrInitMethodNotFound = errors.New("component does not have an Init method")
 
 // InitContextIn is a struct that embeds dig.In and has a field for the initialization context.
 // It is used by BuildProvideFunc to inject a context with the name "ezapp_initCtx" into components.
@@ -18,12 +20,12 @@ type InitContextIn struct {
 	InitCtx context.Context `name:"ezapp_initCtx"`
 }
 
-// BuildProvideFunc creates a function that can be used with dig.Provide to register a component.
+// buildProvideFunc creates a function that can be used with dig.Provide to register a component.
 //
 // This function is the core of the dependency injection mechanism. It dynamically creates
 // a provider function at runtime using reflection. The created function:
 //  1. Accepts two structs with dig.In embedded:
-//     - First struct contains the component's parameters (created by CreateDigInStructType)
+//     - First struct contains the component's parameters (created by createDigInStructType)
 //     - Second struct is InitContextIn which contains a context field with tag name:"ezapp_initCtx"
 //  2. Creates a new instance of the component
 //  3. Extracts dependencies from the first dig struct into a Params struct
@@ -43,28 +45,26 @@ type InitContextIn struct {
 // dependencies automatically, without manual wiring.
 //
 // Parameters:
-//   - Params: The type parameter representing the component's parameters
 //   - compType: The reflect.Type of the component to create
+//   - paramsType: The reflect.Type of the component's parameters struct
 //
 // Returns:
 //   - interface{}: A function that can be passed to dig.Provide
-func BuildProvideFunc[Params any](compType reflect.Type) interface{} {
-
+func buildProvideFunc(compType reflect.Type, paramsType reflect.Type) interface{} {
 	// Create a function using reflection with the signature:
 	// func(paramsDigStruct, ctxDigStruct) (component, error)
 	return reflect.MakeFunc(
 		// Define the function type (signature)
 		reflect.FuncOf(
 			// Input parameter types: the params dig struct and the context dig struct
-			[]reflect.Type{container.CreateDigInStructType[Params](), reflect.TypeOf(InitContextIn{})},
+			[]reflect.Type{createDigInStructType(paramsType), reflect.TypeOf(InitContextIn{})},
 			// Return value types: the component and an error
-			[]reflect.Type{reflect.PointerTo(compType), reflect.TypeOf(new(error)).Elem()},
+			[]reflect.Type{reflect.PointerTo(compType), reflect.TypeOf((*error)(nil)).Elem()},
 			// Not a variadic function
 			false,
 		),
 		// Define the function implementation
 		func(args []reflect.Value) []reflect.Value {
-
 			// Extract the dig structs from the arguments
 			paramsDigStruct := args[0]
 			ctxDigStruct := args[1]
@@ -73,28 +73,41 @@ func BuildProvideFunc[Params any](compType reflect.Type) interface{} {
 			initCtx := ctxDigStruct.Interface().(InitContextIn).InitCtx
 
 			// Convert the dig struct to a Params struct
-			params := container.CreateParamsFromDigStruct[Params](paramsDigStruct)
+			params := createParamsFromDigStruct(paramsType, paramsDigStruct)
 
 			// Create a new instance of the component
-			compInstance := reflect.New(compType).Interface().(primitive.Component[Params])
+			compInstance := reflect.New(compType).Interface()
 
-			// Initialize the component with the Params struct and the injected context
-			err := compInstance.Init(initCtx, params)
-
-			// Handle initialization errors
-			if err != nil {
+			// Find the Init method on the component
+			initMethod := reflect.ValueOf(compInstance).MethodByName("Init")
+			if !initMethod.IsValid() {
+				// Return an error if the Init method doesn't exist
 				return []reflect.Value{
-					// Return zero value for the component (nil)
-					reflect.Zero(reflect.TypeOf(compInstance)),
-					// Return the error
-					reflect.ValueOf(err),
+					reflect.Zero(reflect.PointerTo(compType)),
+					reflect.ValueOf(ErrInitMethodNotFound),
+				}
+			}
+
+			// Call the Init method with the context and params
+			results := initMethod.Call([]reflect.Value{
+				reflect.ValueOf(initCtx),
+				params,
+			})
+
+			// Check if there was an error during initialization
+			errValue := results[0]
+			if !errValue.IsNil() {
+				// Return zero value for the component and the error
+				return []reflect.Value{
+					reflect.Zero(reflect.PointerTo(compType)),
+					errValue,
 				}
 			}
 
 			// Return the initialized component and nil error
 			return []reflect.Value{
 				reflect.ValueOf(compInstance),
-				reflect.Zero(reflect.TypeOf(new(error)).Elem()),
+				reflect.Zero(reflect.TypeOf((*error)(nil)).Elem()),
 			}
 		},
 	).Interface()

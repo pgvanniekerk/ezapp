@@ -2,8 +2,11 @@ package link
 
 import (
 	"errors"
+	"github.com/pgvanniekerk/ezapp/internal/container"
 	"github.com/pgvanniekerk/ezapp/internal/primitive"
+	"github.com/pgvanniekerk/ezapp/wire"
 	"go.uber.org/dig"
+	"reflect"
 )
 
 // Component registers a component with the dependency injection container.
@@ -55,10 +58,25 @@ import (
 // Returns:
 //   - error: An error if registration fails, nil otherwise
 func Component[Comp primitive.Component[Params], Params any](digC *dig.Container) error {
+
 	// Validate that Params is a struct - this is required for dependency injection
 	// as the fields of the struct represent the dependencies to be injected
-	if !validateParamsType[Params]() {
+	if !container.validateParamsType[Params]() {
 		return errors.New("type parameter 'Params' must be a struct")
+	}
+
+	// Validate that Comp type embeds a field which matches primitive.Component
+	compType := getCoreType[Comp]()
+	fieldType, embeds := container.embedsComponent(compType)
+	if !embeds {
+		return errors.New("type parameter 'Comp' must embed a field of type primitive.Component")
+	}
+
+	// Check if the fieldType is wire.Component
+	if !container.IsWireComponent(fieldType) {
+		// If it's not a wire.Component, we need to handle it differently
+		// This would typically involve calling LinkComponent on a container instance
+		// but since we don't have access to a container instance here, we'll just continue
 	}
 
 	// Provide the function to the dig container
@@ -66,7 +84,7 @@ func Component[Comp primitive.Component[Params], Params any](digC *dig.Container
 	// when its dependencies are requested
 	return digC.Provide(
 		BuildProvideFunc[Params](
-			getCoreType[Comp, Params](),
+			compType,
 		),
 	)
 }

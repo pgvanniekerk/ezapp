@@ -19,6 +19,8 @@ type MockComponent struct {
 	CleanupError  error
 	Params        MockParams
 	InitContext   context.Context
+	// Embed primitive.Component to satisfy the validation
+	primitive.Component[MockParams]
 }
 
 func (m *MockComponent) Init(ctx context.Context, params MockParams) error {
@@ -51,6 +53,22 @@ func (m *MockComponentForNonStruct) Init(ctx context.Context, params NonStructPa
 }
 
 func (m *MockComponentForNonStruct) Cleanup(ctx context.Context) error {
+	return nil
+}
+
+// MockComponentWithoutEmbedding is a mock component that implements primitive.Component[MockParams]
+// but doesn't embed the primitive.Component field. This is used to test the error case
+// when Comp doesn't embed primitive.Component.
+type MockComponentWithoutEmbedding struct{}
+
+// Ensure MockComponentWithoutEmbedding implements primitive.Component[MockParams]
+var _ primitive.Component[MockParams] = (*MockComponentWithoutEmbedding)(nil)
+
+func (m *MockComponentWithoutEmbedding) Init(ctx context.Context, params MockParams) error {
+	return nil
+}
+
+func (m *MockComponentWithoutEmbedding) Cleanup(ctx context.Context) error {
 	return nil
 }
 
@@ -113,6 +131,13 @@ func (s *ComponentTestSuite) TestComponentRegistrationWithNonStructParams() {
 	s.Contains(err.Error(), "must be a struct", "Error message should indicate that Params must be a struct")
 }
 
+func (s *ComponentTestSuite) TestComponentRegistrationWithoutEmbedding() {
+	// Test error case when Comp doesn't embed primitive.Component
+	err := Component[*MockComponentWithoutEmbedding, MockParams](s.container)
+	s.Error(err, "Component registration should fail when Comp doesn't embed primitive.Component")
+	s.Contains(err.Error(), "must embed a field of type primitive.Component", "Error message should indicate that Comp must embed primitive.Component")
+}
+
 func (s *ComponentTestSuite) TestComponentInvocation() {
 	// Test that we can invoke the type from the dig container
 	// This verifies that the Component function correctly registers the component
@@ -150,7 +175,7 @@ func (s *ComponentTestSuite) TestComponentInvocation() {
 	s.NoError(err, "Context provider registration should succeed")
 
 	// Register the component with the container using the Component function
-	err = Component[*MockComponent](container)
+	err = Component[*MockComponent, MockParams](container)
 	s.NoError(err, "Component registration should succeed")
 
 	// Now invoke a function that tries to receive the component from the container
