@@ -1,11 +1,19 @@
 # EzApp
 
-EzApp is a simple, lightweight framework for building Go applications. It provides a clean and structured way to:
+EzApp is a simple, opinionated Go framework for building applications with zero configuration overhead. It provides a structured way to quickly bootstrap applications that handle configuration loading, logging, concurrent service execution, graceful shutdown, and resource cleanup - all with sensible defaults and minimal boilerplate.
 
-1. Load configuration from environment variables
-2. Wire together application components
-3. Run multiple services concurrently
-4. Handle errors and graceful shutdown
+## Why EzApp?
+
+EzApp eliminates the repetitive setup code found in most Go applications by providing:
+
+- **Zero-config startup**: Automatic environment variable configuration loading
+- **Built-in logging**: Structured logging with configurable levels
+- **Lifecycle management**: Handles startup, execution, and shutdown phases
+- **Concurrent execution**: Run multiple services safely with coordinated shutdown
+- **Resource cleanup**: Systematic cleanup with timeout control
+- **Error handling**: Centralized error handling with proper logging and exit codes
+
+Perfect for microservices, CLI tools, web applications, and background workers that need reliable startup and shutdown behavior.
 
 ## Installation
 
@@ -13,168 +21,285 @@ EzApp is a simple, lightweight framework for building Go applications. It provid
 go get github.com/pgvanniekerk/ezapp
 ```
 
-## Usage
+## Quick Start
 
-EzApp is designed to make it easy to wire together and execute applications. Here's a basic example of how to use it:
+### 1. Define Your Configuration
 
-### Recommended Structure
-
-We recommend organizing your code with the configuration struct and builder function in their own `.go` file in an app package, separate from your main application code. This makes your code more modular and easier to maintain. It's especially recommended to have the builder function located in the app package rather than the main package.
-
-#### main.go
+Create a configuration struct using [Netflix go-env](https://github.com/Netflix/go-env) tags:
 
 ```go
 package main
 
+type Config struct {
+    Port        int    `env:"PORT" default:"8080"`
+    DatabaseURL string `env:"DATABASE_URL" required:"true"`
+    LogLevel    string `env:"LOG_LEVEL" default:"INFO"`
+    Workers     int    `env:"WORKER_COUNT" default:"5"`
+}
+```
+
+### 2. Create Your Initializer Function
+
+Create an initializer function (recommended in a separate file):
+
+```go
+// initializer.go
+package main
+
 import (
-	"github.com/pgvanniekerk/ezapp/pkg/ezapp"
-	"myapp/app"
+    "context"
+    "database/sql"
+    "net/http"
+    
+    "github.com/pgvanniekerk/ezapp"
+    _ "github.com/lib/pq"
 )
+
+func Initialize(ctx ezapp.InitCtx[Config]) (ezapp.AppCtx, error) {
+    // Access your configuration
+    config := ctx.Config
+    logger := ctx.Logger
+    
+    // Setup dependencies
+    db, err := sql.Open("postgres", config.DatabaseURL)
+    if err != nil {
+        return ezapp.AppCtx{}, err
+    }
+    
+    // Create your services as runner functions
+    server := createHTTPServer(config.Port, db, logger)
+    worker := createBackgroundWorker(db, logger)
+    
+    // Define cleanup function for resource cleanup
+    cleanup := func(shutdownCtx context.Context) error {
+        logger.Info("Cleaning up resources...")
+        return db.Close()
+    }
+    
+    // Construct and return the application context
+    return ezapp.Construct(
+        ezapp.WithRunners(server, worker),
+        ezapp.WithCleanup(cleanup),
+    )
+}
+
+// Runner functions must match: func(context.Context) error
+func createHTTPServer(port int, db *sql.DB, logger *zap.Logger) func(context.Context) error {
+    return func(ctx context.Context) error {
+        server := &http.Server{
+            Addr: fmt.Sprintf(":%d", port),
+            // ... configure your server
+        }
+        
+        // Start graceful shutdown listener
+        go func() {
+            <-ctx.Done()
+            logger.Info("Shutting down HTTP server...")
+            server.Shutdown(context.Background())
+        }()
+        
+        logger.Info("Starting HTTP server", zap.Int("port", port))
+        if err := server.ListenAndServe(); err != http.ErrServerClosed {
+            return err
+        }
+        return nil
+    }
+}
+
+func createBackgroundWorker(db *sql.DB, logger *zap.Logger) func(context.Context) error {
+    return func(ctx context.Context) error {
+        logger.Info("Starting background worker...")
+        
+        for {
+            select {
+            case <-ctx.Done():
+                logger.Info("Background worker shutting down...")
+                return nil
+            default:
+                // Do your work here
+                time.Sleep(time.Second)
+            }
+        }
+    }
+}
+```
+
+### 3. Wire Everything Together
+
+Your main function becomes incredibly simple:
+
+```go
+// main.go
+package main
+
+import "github.com/pgvanniekerk/ezapp"
 
 func main() {
-  ezapp.Run(app.Builder)
+    ezapp.Run(Initialize)
+    // That's it! EzApp handles everything else
 }
 ```
 
-#### app/builder.go
+## Application Lifecycle
+
+EzApp manages the complete application lifecycle in this order:
+
+### 1. **Configuration Loading**
+- Loads your configuration struct from environment variables
+- Validates required fields and applies defaults
+- Fails fast with clear error messages if configuration is invalid
+
+### 2. **Logger Initialization**
+- Creates a structured zap.Logger with configurable log level
+- Controlled by `EZAPP_LOG_LEVEL` environment variable
+
+### 3. **Startup Context Creation**
+- Creates a context with configurable startup timeout
+- Controlled by `EZAPP_STARTUP_TIMEOUT` (default: 15 seconds)
+- Contains shutdown timeout information for later use
+
+### 4. **Application Initialization**
+- Calls your initializer function with populated `InitCtx`
+- Provides access to config, logger, and startup context
+- Your initializer wires dependencies and creates runners
+
+### 5. **Concurrent Execution**
+- Runs all runners concurrently in separate goroutines
+- Monitors for SIGINT/SIGTERM signals for graceful shutdown
+- Uses error groups for coordinated error handling
+
+### 6. **Graceful Shutdown**
+- Cancels context to signal all runners to stop
+- Waits for all runners to complete gracefully
+
+### 7. **Resource Cleanup**
+- Calls cleanup function (if provided) with shutdown timeout
+- Controlled by `EZAPP_SHUTDOWN_TIMEOUT` (default: 15 seconds)
+- Ensures resources are properly released
+
+### 8. **Exit**
+- Logs completion status and exits
+- Uses appropriate exit codes for different scenarios
+
+## Environment Variables
+
+### EzApp Framework Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EZAPP_LOG_LEVEL` | `INFO` | Log level: `DEBUG`, `INFO`, `WARN`, `ERROR`, `DPANIC`, `PANIC`, `FATAL` |
+| `EZAPP_STARTUP_TIMEOUT` | `15` | Startup timeout in seconds |
+| `EZAPP_SHUTDOWN_TIMEOUT` | `15` | Cleanup timeout in seconds |
+
+### Your Application Variables
+
+Define your own configuration using go-env tags:
 
 ```go
-package app
-
-import (
-	"context"
-	"database/sql"
-	"fmt"
-	"github.com/pgvanniekerk/ezapp/pkg/ezapp"
-	_ "github.com/lib/pq" // PostgreSQL driver
-)
-
-// Logger is a simple logging interface
-type Logger interface {
-	Info(format string, args ...interface{})
-	Error(format string, args ...interface{})
-}
-
-// SimpleLogger implements the Logger interface
-type SimpleLogger struct{}
-
-// NewLogger creates a new SimpleLogger
-func NewLogger() *SimpleLogger {
-	return &SimpleLogger{}
-}
-
-// Info logs an informational message
-func (l *SimpleLogger) Info(format string, args ...interface{}) {
-	fmt.Printf("[INFO] "+format+"\n", args...)
-}
-
-// Error logs an error message
-func (l *SimpleLogger) Error(format string, args ...interface{}) {
-	fmt.Printf("[ERROR] "+format+"\n", args...)
-}
-
 type Config struct {
-	// Your configuration fields here
-	Port        int    `env:"PORT" default:"8080"`
-	DatabaseURL string `env:"DATABASE_URL" required:"true"`
-}
-
-// Builder is the function used for dependency injection and wiring
-// It connects services and dependencies together
-func Builder(config Config) ([]ezapp.Runnable, error) {
-	// Connect to the database
-	db, err := sql.Open("postgres", config.DatabaseURL)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create a logger (not shown in this basic example)
-	logger := NewLogger()
-
-	// Create a server with the database connection
-	server := NewServer(config.Port, db, logger, func() error {
-		return db.Close()
-	})
-
-	// Return the list of runnables
-	return []ezapp.Runnable{server}, nil
+    // Required field
+    DatabaseURL string `env:"DATABASE_URL" required:"true"`
+    
+    // Optional with default
+    Port int `env:"PORT" default:"8080"`
+    
+    // String with default
+    Environment string `env:"ENV" default:"development"`
+    
+    // Boolean values
+    EnableMetrics bool `env:"ENABLE_METRICS" default:"true"`
 }
 ```
 
-### Runnable Interface
+## Advanced Usage
 
-To be used with EzApp, your services must implement the `Runnable` interface:
+### Multiple Services
 
 ```go
-type Runnable interface {
-	Run(context.Context) error
+func Initialize(ctx ezapp.InitCtx[Config]) (ezapp.AppCtx, error) {
+    return ezapp.Construct(
+        ezapp.WithRunners(
+            createHTTPServer(ctx.Config, ctx.Logger),
+            createGRPCServer(ctx.Config, ctx.Logger),
+            createMetricsServer(ctx.Config, ctx.Logger),
+            createBackgroundWorker(ctx.Config, ctx.Logger),
+        ),
+        ezapp.WithCleanup(cleanupResources),
+    )
 }
 ```
 
-The `Run(context.Context)` method starts the service and should only return an error in exceptional circumstances such as dependency failures or timeouts (application-impacting errors). The context parameter can be used to detect when the application is shutting down, allowing for graceful termination of long-running operations.
-
-**Note:** The `EzApp.Run()` method itself does not return an error. Instead, it prints appropriate messages to the console about why the app is shutting down and handles graceful exit in all cases.
-
-Here's an example of how to implement the Runnable interface:
+### Complex Cleanup
 
 ```go
-package app
-
-import (
-	"context"
-	"fmt"
-	"net/http"
-	"database/sql"
-)
-
-type Server struct {
-	server  *http.Server
-	logger  Logger
-	cleanup func() error
-}
-
-func NewServer(port int, db *sql.DB, logger Logger, cleanup func() error) *Server {
-	return &Server{
-		server: &http.Server{
-			Addr: fmt.Sprintf(":%d", port),
-		},
-		logger: logger,
-		cleanup: cleanup,
-	}
-}
-
-func (s *Server) Run(ctx context.Context) error {
-	s.logger.Info("Starting server on %s", s.server.Addr)
-
-	// Start a goroutine to listen for context cancellation
-	go func() {
-		<-ctx.Done()
-		// Context was cancelled, shut down the server
-		s.logger.Info("Shutting down server")
-		s.server.Shutdown(context.Background())
-		// Clean up resources
-		if s.cleanup != nil {
-			s.logger.Info("Cleaning up resources")
-			s.cleanup()
-		}
-	}()
-
-	// Start the server
-	if err := s.server.ListenAndServe(); err != http.ErrServerClosed {
-		s.logger.Error("Server error: %v", err)
-		return err
-	}
-	return nil
+func Initialize(ctx ezapp.InitCtx[Config]) (ezapp.AppCtx, error) {
+    db := setupDatabase(ctx.Config.DatabaseURL)
+    cache := setupRedis(ctx.Config.RedisURL)
+    
+    cleanup := func(shutdownCtx context.Context) error {
+        // Cleanup in reverse order of initialization
+        cacheErr := cache.Close()
+        dbErr := db.Close()
+        
+        // Join all errors and return the combined error
+        return errors.Join(cacheErr, dbErr)
+    }
+    
+    return ezapp.Construct(
+        ezapp.WithRunners(createServer(db, cache)),
+        ezapp.WithCleanup(cleanup),
+    )
 }
 ```
 
-## Features
+### Accessing Shutdown Timeout in Runners
 
-- **Environment-based Configuration**: Automatically loads configuration from environment variables using the [go-env](https://github.com/Netflix/go-env) package.
-- **Graceful Shutdown**: Handles SIGINT and SIGTERM signals to gracefully shut down your application.
-- **Concurrent Execution**: Runs multiple services concurrently in separate goroutines.
-- **Error Handling**: Provides a structured way to handle errors at both the service and application levels.
-- **Type Safety with Generics**: Uses Go generics to provide type safety for your configuration.
+```go
+func createServer(config Config, logger *zap.Logger) func(context.Context) error {
+    return func(ctx context.Context) error {
+        server := &http.Server{Addr: fmt.Sprintf(":%d", config.Port)}
+        
+        go func() {
+            <-ctx.Done()
+            
+            // Get shutdown timeout from the startup context
+            // (passed through the context chain)
+            shutdownTimeout := config.GetShutdownTimeout(ctx)
+            shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+            defer cancel()
+            
+            server.Shutdown(shutdownCtx)
+        }()
+        
+        return server.ListenAndServe()
+    }
+}
+```
+
+## Error Handling
+
+EzApp uses `logger.Fatal()` for all error conditions, which logs the error and exits with an appropriate code:
+
+- **Configuration errors**: Invalid environment variables or struct validation
+- **Initialization errors**: Failures in your initializer function
+- **Runtime errors**: Failures from any runner function
+- **Cleanup errors**: Failures in cleanup function (after successful run)
+
+All errors are logged with context before termination.
+
+## Best Practices
+
+1. **Keep initializer separate**: Put your initializer function in a separate file (e.g., `initializer.go`)
+
+2. **Design for graceful shutdown**: All runners should respect context cancellation
+
+3. **Use structured logging**: Leverage the provided zap.Logger for consistent logging
+
+4. **Handle cleanup properly**: Release resources in reverse order of acquisition
+
+5. **Fail fast**: Validate dependencies early in the initializer
+
+6. **Configure via environment**: Use environment variables for all configuration
 
 ## License
 
