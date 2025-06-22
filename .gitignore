@@ -1,0 +1,5 @@
+# Ignore IDE specific files
+.idea/
+
+# Ignore Claude AI assistant files
+.claude/
