@@ -134,10 +134,10 @@ func Initialize(ctx ezapp.InitCtx[Config]) (ezapp.AppCtx, error) {
 // Runners are typically structs with Run and Close methods
 type HTTPServer struct {
     server *http.Server
-    logger *zap.Logger
+    logger *slog.Logger
 }
 
-func createHTTPServer(port int, db *sql.DB, logger *zap.Logger) *HTTPServer {
+func createHTTPServer(port int, db *sql.DB, logger *slog.Logger) *HTTPServer {
     return &HTTPServer{
         server: &http.Server{
             Addr: fmt.Sprintf(":%d", port),
@@ -149,7 +149,7 @@ func createHTTPServer(port int, db *sql.DB, logger *zap.Logger) *HTTPServer {
 
 // Run method implements the Runner interface
 func (s *HTTPServer) Run(ctx context.Context) error {
-    s.logger.Info("Starting HTTP server", zap.String("addr", s.server.Addr))
+    s.logger.Info("Starting HTTP server", "addr", s.server.Addr)
     if err := s.server.ListenAndServe(); err != http.ErrServerClosed {
         return err
     }
@@ -164,11 +164,11 @@ func (s *HTTPServer) Close(ctx context.Context) error {
 
 type BackgroundWorker struct {
     db     *sql.DB
-    logger *zap.Logger
+    logger *slog.Logger
     stopCh chan struct{}
 }
 
-func createBackgroundWorker(db *sql.DB, logger *zap.Logger) *BackgroundWorker {
+func createBackgroundWorker(db *sql.DB, logger *slog.Logger) *BackgroundWorker {
     return &BackgroundWorker{
         db:     db,
         logger: logger,
@@ -229,7 +229,7 @@ EzApp manages the complete application lifecycle in this order:
 - Fails fast with clear error messages if configuration is invalid
 
 ### 2. **Logger Initialization**
-- Creates a structured zap.Logger with configurable log level
+- Creates a structured slog.Logger with configurable log level
 - Controlled by `EZAPP_LOG_LEVEL` environment variable
 
 ### 3. **Startup Context Creation**
@@ -266,7 +266,7 @@ EzApp manages the complete application lifecycle in this order:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `EZAPP_LOG_LEVEL` | `INFO` | Log level: `DEBUG`, `INFO`, `WARN`, `ERROR`, `DPANIC`, `PANIC`, `FATAL` |
+| `EZAPP_LOG_LEVEL` | `INFO` | Log level: `DEBUG`, `INFO`, `WARN`, `ERROR` |
 | `EZAPP_STARTUP_TIMEOUT` | `15` | Startup timeout in seconds |
 | `EZAPP_SHUTDOWN_TIMEOUT` | `15` | Cleanup timeout in seconds |
 
@@ -527,7 +527,7 @@ func Initialize(ctx ezapp.InitCtx[Config]) (ezapp.AppCtx, error) {
 
 ## Error Handling
 
-EzApp uses `logger.Fatal()` for all error conditions, which logs the error and exits with an appropriate code:
+EzApp logs errors with `logger.Error()` and exits with an appropriate code for all error conditions:
 
 - **Configuration errors**: Invalid environment variables or struct validation
 - **Initialization errors**: Failures in your initializer function
@@ -542,7 +542,7 @@ All errors are logged with context before termination.
 
 2. **Design for graceful shutdown**: All runners should respect context cancellation
 
-3. **Use structured logging**: Leverage the provided zap.Logger for consistent logging
+3. **Use structured logging**: Leverage the provided slog.Logger for consistent logging
 
 4. **Handle cleanup properly**: Release resources in reverse order of acquisition
 

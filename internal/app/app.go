@@ -3,14 +3,14 @@ package app
 import (
 	"context"
 	"fmt"
-	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 )
 
-func New(runnerList []Runner, logger *zap.Logger) App {
+func New(runnerList []Runner, logger *slog.Logger) App {
 	return App{
 		runnerList: runnerList,
 		logger:     logger,
@@ -19,7 +19,7 @@ func New(runnerList []Runner, logger *zap.Logger) App {
 
 type App struct {
 	runnerList []Runner
-	logger     *zap.Logger
+	logger     *slog.Logger
 }
 
 func (a App) Run() error {
@@ -46,7 +46,7 @@ func (a App) Run() error {
 	a.logger.Debug("created error group")
 
 	// Invoke each runnable through the error group.
-	for idx, _ := range a.runnerList {
+	for idx := range a.runnerList {
 		errGrp.Go(func() error {
 			return a.runnerList[idx](ctx)
 		})

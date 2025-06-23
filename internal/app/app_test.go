@@ -3,23 +3,21 @@ package app
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/pgvanniekerk/ezapp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zaptest/observer"
 )
 
-// Helper function to create a test logger with observer
-func createTestLogger() (*zap.Logger, *observer.ObservedLogs) {
-	core, logs := observer.New(zap.DebugLevel)
-	logger := zap.New(core)
-	return logger, logs
+// Helper function to create a test logger with handler
+func createTestLogger() (*slog.Logger, *testutil.TestHandler) {
+	return testutil.NewTestLogger(slog.LevelDebug)
 }
 
 // Helper runner that succeeds immediately
@@ -103,11 +101,11 @@ func TestAppRunWithNoRunners(t *testing.T) {
 	err := app.Run()
 
 	assert.NoError(t, err, "App should run successfully with no runners")
-	
+
 	// Verify debug logs were generated
-	logMessages := logs.All()
-	assert.Contains(t, getLogMessages(logMessages), "start application")
-	assert.Contains(t, getLogMessages(logMessages), "application finished running")
+	logMessages := logs.Messages()
+	assert.Contains(t, logMessages, "start application")
+	assert.Contains(t, logMessages, "application finished running")
 }
 
 // TestAppRunWithSingleSuccessfulRunner tests app execution with one successful runner
@@ -122,9 +120,9 @@ func TestAppRunWithSingleSuccessfulRunner(t *testing.T) {
 	err := app.Run()
 
 	assert.NoError(t, err, "App should run successfully with successful runner")
-	
+
 	// Verify all expected debug logs
-	logMessages := getLogMessages(logs.All())
+	logMessages := logs.Messages()
 	assert.Contains(t, logMessages, "start application")
 	assert.Contains(t, logMessages, "created termination context")
 	assert.Contains(t, logMessages, "started termination signaller")
@@ -140,22 +138,22 @@ func TestAppRunWithSingleSuccessfulRunner(t *testing.T) {
 // - Execution order is concurrent (not sequential)
 func TestAppRunWithMultipleSuccessfulRunners(t *testing.T) {
 	logger, _ := createTestLogger()
-	
+
 	var order []int
 	var mu sync.Mutex
-	
+
 	runners := []Runner{
 		orderRecordingRunner(1, &order, &mu),
 		orderRecordingRunner(2, &order, &mu),
 		orderRecordingRunner(3, &order, &mu),
 	}
-	
+
 	app := New(runners, logger)
 
 	err := app.Run()
 
 	assert.NoError(t, err, "App should run successfully with multiple runners")
-	
+
 	// Verify all runners executed
 	mu.Lock()
 	assert.Len(t, order, 3, "All runners should have executed")
@@ -172,12 +170,12 @@ func TestAppRunWithMultipleSuccessfulRunners(t *testing.T) {
 // - Other runners are cancelled when one fails
 func TestAppRunWithFailingRunner(t *testing.T) {
 	logger, _ := createTestLogger()
-	
+
 	runners := []Runner{
 		failingRunner,
 		delayedSuccessfulRunner(100 * time.Millisecond), // Should be cancelled
 	}
-	
+
 	app := New(runners, logger)
 
 	err := app.Run()
@@ -194,13 +192,13 @@ func TestAppRunWithFailingRunner(t *testing.T) {
 // - First error is returned (error group behavior)
 func TestAppRunWithMixedRunners(t *testing.T) {
 	logger, _ := createTestLogger()
-	
+
 	runners := []Runner{
 		successfulRunner,
 		failingRunner,
 		delayedSuccessfulRunner(100 * time.Millisecond),
 	}
-	
+
 	app := New(runners, logger)
 
 	err := app.Run()
@@ -216,13 +214,13 @@ func TestAppRunWithMixedRunners(t *testing.T) {
 // - Other running runners are cancelled when one fails
 func TestAppRunWithDelayedFailure(t *testing.T) {
 	logger, _ := createTestLogger()
-	
+
 	started := make(chan struct{})
 	runners := []Runner{
-		longRunningRunner(started),                        // Will be cancelled
-		delayedFailingRunner(50 * time.Millisecond),      // Will fail after delay
+		longRunningRunner(started),                  // Will be cancelled
+		delayedFailingRunner(50 * time.Millisecond), // Will fail after delay
 	}
-	
+
 	app := New(runners, logger)
 
 	// Wait for long runner to start
@@ -243,7 +241,7 @@ func TestAppRunWithDelayedFailure(t *testing.T) {
 // - App can complete even when runners are cancelled
 func TestAppRunWithContextCancellation(t *testing.T) {
 	logger, _ := createTestLogger()
-	
+
 	cancellingRunner := func(ctx context.Context) error {
 		// Simulate a runner that respects context cancellation
 		select {
@@ -253,13 +251,13 @@ func TestAppRunWithContextCancellation(t *testing.T) {
 			return nil
 		}
 	}
-	
+
 	// Create a runner that will cause cancellation by failing quickly
 	quickFailRunner := func(ctx context.Context) error {
 		time.Sleep(10 * time.Millisecond)
 		return errors.New("quick fail")
 	}
-	
+
 	runners := []Runner{cancellingRunner, quickFailRunner}
 	app := New(runners, logger)
 
@@ -276,10 +274,10 @@ func TestAppRunWithContextCancellation(t *testing.T) {
 // - Signal cleanup is performed properly
 func TestAppTerminationSignaller(t *testing.T) {
 	logger, logs := createTestLogger()
-	
+
 	started := make(chan struct{})
 	cancelled := make(chan struct{})
-	
+
 	runners := []Runner{
 		func(ctx context.Context) error {
 			close(started)
@@ -288,7 +286,7 @@ func TestAppTerminationSignaller(t *testing.T) {
 			return ctx.Err()
 		},
 	}
-	
+
 	app := New(runners, logger)
 
 	// Run app in goroutine
@@ -305,7 +303,7 @@ func TestAppTerminationSignaller(t *testing.T) {
 	pid := os.Getpid()
 	process, err := os.FindProcess(pid)
 	require.NoError(t, err, "Should find current process")
-	
+
 	err = process.Signal(syscall.SIGTERM)
 	require.NoError(t, err, "Should send SIGTERM successfully")
 
@@ -326,7 +324,7 @@ func TestAppTerminationSignaller(t *testing.T) {
 	}
 
 	// Verify signal handling debug logs
-	logMessages := getLogMessages(logs.All())
+	logMessages := logs.Messages()
 	assert.Contains(t, logMessages, "starting termination signaller")
 	assert.Contains(t, logMessages, "started listening for SIGINT and SIGTERM")
 	assert.Contains(t, logMessages, "received SIGINT or SIGTERM, terminating")
@@ -340,10 +338,10 @@ func TestAppTerminationSignaller(t *testing.T) {
 // - All runners receive the correct context
 func TestAppRunnerListIndexCapture(t *testing.T) {
 	logger, _ := createTestLogger()
-	
+
 	var executedRunners []int
 	var mu sync.Mutex
-	
+
 	// Create runners that record their expected index
 	runners := make([]Runner, 5)
 	for i := 0; i < 5; i++ {
@@ -355,16 +353,16 @@ func TestAppRunnerListIndexCapture(t *testing.T) {
 			return nil
 		}
 	}
-	
+
 	app := New(runners, logger)
 
 	err := app.Run()
 
 	assert.NoError(t, err, "App should run successfully")
-	
+
 	mu.Lock()
 	assert.Len(t, executedRunners, 5, "All runners should have executed")
-	
+
 	// Verify all expected indices were executed (order may vary due to concurrency)
 	for i := 0; i < 5; i++ {
 		assert.Contains(t, executedRunners, i, "Runner %d should have executed", i)
@@ -389,7 +387,7 @@ func TestAppWithNilLogger(t *testing.T) {
 	}()
 
 	err := app.Run()
-	
+
 	// If we reach here, nil logger was handled gracefully
 	assert.NoError(t, err, "App should handle nil logger gracefully if supported")
 }
@@ -401,25 +399,25 @@ func TestAppWithNilLogger(t *testing.T) {
 // - Concurrent execution provides performance benefits
 func TestAppRunConcurrentExecution(t *testing.T) {
 	logger, _ := createTestLogger()
-	
+
 	runnerDelay := 100 * time.Millisecond
 	numRunners := 3
-	
+
 	var startTimes []time.Time
 	var mu sync.Mutex
-	
+
 	runners := make([]Runner, numRunners)
 	for i := 0; i < numRunners; i++ {
 		runners[i] = func(ctx context.Context) error {
 			mu.Lock()
 			startTimes = append(startTimes, time.Now())
 			mu.Unlock()
-			
+
 			time.Sleep(runnerDelay)
 			return nil
 		}
 	}
-	
+
 	app := New(runners, logger)
 
 	start := time.Now()
@@ -427,30 +425,21 @@ func TestAppRunConcurrentExecution(t *testing.T) {
 	totalDuration := time.Since(start)
 
 	assert.NoError(t, err, "App should run successfully")
-	
+
 	// Verify concurrent execution - total time should be close to single runner time
 	// Allow some overhead for goroutine startup
 	maxExpectedDuration := runnerDelay + 50*time.Millisecond
-	assert.Less(t, totalDuration, maxExpectedDuration, 
-		"Concurrent execution should be faster than sequential (%v vs %v)", 
+	assert.Less(t, totalDuration, maxExpectedDuration,
+		"Concurrent execution should be faster than sequential (%v vs %v)",
 		totalDuration, time.Duration(numRunners)*runnerDelay)
-	
+
 	// Verify runners started approximately at the same time
 	mu.Lock()
 	assert.Len(t, startTimes, numRunners, "All runners should have started")
 	if len(startTimes) >= 2 {
 		maxStartDiff := startTimes[len(startTimes)-1].Sub(startTimes[0])
-		assert.Less(t, maxStartDiff, 50*time.Millisecond, 
+		assert.Less(t, maxStartDiff, 50*time.Millisecond,
 			"Runners should start within 50ms of each other")
 	}
 	mu.Unlock()
-}
-
-// Helper function to extract log messages from observed logs
-func getLogMessages(logs []observer.LoggedEntry) []string {
-	messages := make([]string, len(logs))
-	for i, log := range logs {
-		messages[i] = log.Message
-	}
-	return messages
 }
