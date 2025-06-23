@@ -46,7 +46,7 @@ func (a App) Run() error {
 	a.logger.Debug("created error group")
 
 	// Invoke each runnable through the error group.
-	for idx, _ := range a.runnerList {
+	for idx := range a.runnerList {
 		errGrp.Go(func() error {
 			return a.runnerList[idx](ctx)
 		})
