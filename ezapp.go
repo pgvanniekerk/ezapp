@@ -18,17 +18,13 @@ type InitCtx[Config any] struct {
 	// StartupCtx is a context with a configurable timeout (default 15 seconds)
 	// that can be used during initialization to enforce startup time limits.
 	// The timeout is controlled by the EZAPP_STARTUP_TIMEOUT environment variable.
-	//
-	// Additionally, this context contains a shutdown timeout duration as a context value
-	// that can be retrieved using config.GetShutdownTimeout(). The shutdown timeout
-	// is controlled by the EZAPP_SHUTDOWN_TIMEOUT environment variable (default: 15 seconds).
 	StartupCtx context.Context
-	
+
 	// Logger is a configured zap.Logger instance ready for use.
 	// The log level is controlled by the EZAPP_LOG_LEVEL environment variable
 	// (default: INFO). Supports DEBUG, INFO, WARN, ERROR, DPANIC, PANIC, FATAL.
 	Logger *zap.Logger
-	
+
 	// Config contains the application configuration loaded from environment variables
 	// using the Netflix go-env package. The Config type should be a struct with
 	// appropriate `env` tags for field mapping.
@@ -49,15 +45,16 @@ type AppCtx struct {
 //
 // The initializer function should:
 //   - Use the provided logger for any initialization logging
-//   - Use the provided config for application configuration  
+//   - Use the provided config for application configuration
 //   - Respect the StartupCtx timeout for any initialization operations
 //   - Return an AppCtx containing all the runners to be executed
 //
 // Example:
-//   func MyInitializer(ctx InitCtx[MyConfig]) (AppCtx, error) {
-//       server := NewServer(ctx.Config.Port, ctx.Logger)
-//       return Construct(WithRunners(server.Run))
-//   }
+//
+//	func MyInitializer(ctx InitCtx[MyConfig]) (AppCtx, error) {
+//	    server := NewServer(ctx.Config.Port, ctx.Logger)
+//	    return Construct(WithRunners(server.Run))
+//	}
 type Initializer[Config any] func(InitCtx[Config]) (AppCtx, error)
 
 // option represents a functional option for configuring an AppCtx.
@@ -73,16 +70,17 @@ type option func(*AppCtx) error
 // Runners should monitor this context and perform graceful cleanup when cancelled.
 //
 // Example:
-//   func serverRunner(ctx context.Context) error {
-//       server := &http.Server{Addr: ":8080"}
-//       go func() {
-//           <-ctx.Done()
-//           server.Shutdown(context.Background())
-//       }()
-//       return server.ListenAndServe()
-//   }
 //
-//   appCtx, err := Construct(WithRunners(serverRunner, anotherRunner))
+//	func serverRunner(ctx context.Context) error {
+//	    server := &http.Server{Addr: ":8080"}
+//	    go func() {
+//	        <-ctx.Done()
+//	        server.Shutdown(context.Background())
+//	    }()
+//	    return server.ListenAndServe()
+//	}
+//
+//	appCtx, err := Construct(WithRunners(serverRunner, anotherRunner))
 func WithRunners(runners ...app.Runner) option {
 	return func(appCtx *AppCtx) error {
 		appCtx.runnerList = append(appCtx.runnerList, runners...)
@@ -99,19 +97,20 @@ func WithRunners(runners ...app.Runner) option {
 // cleanup time limits and prevent hanging during application shutdown.
 //
 // Example:
-//   func cleanup(ctx context.Context) error {
-//       // Close database connections
-//       if err := db.Close(); err != nil {
-//           return fmt.Errorf("failed to close database: %w", err)
-//       }
-//       // Close other resources...
-//       return nil
-//   }
 //
-//   appCtx, err := Construct(
-//       WithRunners(server.Run),
-//       WithCleanup(cleanup),
-//   )
+//	func cleanup(ctx context.Context) error {
+//	    // Close database connections
+//	    if err := db.Close(); err != nil {
+//	        return fmt.Errorf("failed to close database: %w", err)
+//	    }
+//	    // Close other resources...
+//	    return nil
+//	}
+//
+//	appCtx, err := Construct(
+//	    WithRunners(server.Run),
+//	    WithCleanup(cleanup),
+//	)
 func WithCleanup(cleanupFunc func(shutdownCtx context.Context) error) option {
 	return func(appCtx *AppCtx) error {
 		appCtx.cleanupFunc = cleanupFunc
@@ -128,16 +127,18 @@ func WithCleanup(cleanupFunc func(shutdownCtx context.Context) error) option {
 // construction is aborted and the error is returned.
 //
 // Example:
-//   appCtx, err := Construct(
-//       WithRunners(server.Run, worker.Run),
-//       // Future options like WithMiddleware, WithHealthCheck, etc.
-//   )
-//   if err != nil {
-//       return err
-//   }
+//
+//	appCtx, err := Construct(
+//	    WithRunners(server.Run, worker.Run),
+//	    // Future options like WithMiddleware, WithHealthCheck, etc.
+//	)
+//	if err != nil {
+//	    return err
+//	}
 func Construct(options ...option) (AppCtx, error) {
+
 	appCtx := AppCtx{
-		runnerList:  make([]app.Runner, 0),
+		runnerList:  make([]app.Runner, 0, 8),
 		cleanupFunc: nil,
 	}
 
@@ -172,30 +173,29 @@ func Construct(options ...option) (AppCtx, error) {
 //   - Plus any variables defined in your Config struct
 //
 // Example:
-//   type MyConfig struct {
-//       Port int `env:"PORT" default:"8080"`
-//       DatabaseURL string `env:"DATABASE_URL" required:"true"`
-//   }
 //
-//   func main() {
-//       ezapp.Run(func(ctx ezapp.InitCtx[MyConfig]) (ezapp.AppCtx, error) {
-//           server := NewServer(ctx.Config.Port, ctx.Logger)
-//           return ezapp.Construct(ezapp.WithRunners(server.Run))
-//       })
-//       // This point is never reached - Run() handles application lifecycle
-//   }
+//	type MyConfig struct {
+//	    Port int `env:"PORT" default:"8080"`
+//	    DatabaseURL string `env:"DATABASE_URL" required:"true"`
+//	}
+//
+//	func main() {
+//	    ezapp.Run(func(ctx ezapp.InitCtx[MyConfig]) (ezapp.AppCtx, error) {
+//	        server := NewServer(ctx.Config.Port, ctx.Logger)
+//	        return ezapp.Construct(ezapp.WithRunners(server.Run))
+//	    })
+//	    // This point is never reached - Run() handles application lifecycle
+//	}
 func Run[Config any](initializer Initializer[Config]) {
+
+	// Load logger
+	logger := config.LoadLogger()
 
 	// Load configuration from environment variables
 	cfg, err := config.LoadVar[Config]()
 	if err != nil {
-		// Use a basic logger since we can't load the configured one yet
-		zap.L().Fatal("failed to load configuration", zap.Error(err))
+		logger.Fatal("failed to load configuration", zap.Error(err))
 	}
-
-	// Load logger
-	logger := config.LoadLogger()
-	defer logger.Sync()
 
 	// Create startup context with timeout
 	startupCtx, err := config.StartupCtx()
@@ -222,13 +222,13 @@ func Run[Config any](initializer Initializer[Config]) {
 
 	// After app completes, run cleanup if provided
 	if appCtx.cleanupFunc != nil {
-		// Get the shutdown timeout from the startup context
-		shutdownTimeout := config.GetShutdownTimeout(startupCtx)
-		
+
 		// Create a shutdown context with the configured timeout
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
-		
+		shutdownCtx, err := config.ShutdownCtx()
+		if err != nil {
+			logger.Fatal("failed to create shutdown context", zap.Error(err))
+		}
+
 		// Run cleanup function
 		if cleanupErr := appCtx.cleanupFunc(shutdownCtx); cleanupErr != nil {
 			logger.Error("cleanup failed", zap.Error(cleanupErr))

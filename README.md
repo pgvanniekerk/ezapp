@@ -50,7 +50,7 @@ import (
     "context"
     "database/sql"
     "net/http"
-    
+
     "github.com/pgvanniekerk/ezapp"
     _ "github.com/lib/pq"
 )
@@ -59,68 +59,147 @@ func Initialize(ctx ezapp.InitCtx[Config]) (ezapp.AppCtx, error) {
     // Access your configuration
     config := ctx.Config
     logger := ctx.Logger
-    
+
     // Setup dependencies
     db, err := sql.Open("postgres", config.DatabaseURL)
     if err != nil {
         return ezapp.AppCtx{}, err
     }
-    
+
     // Create your services as runner functions
     server := createHTTPServer(config.Port, db, logger)
     worker := createBackgroundWorker(db, logger)
-    
+
     // Define cleanup function for resource cleanup
     cleanup := func(shutdownCtx context.Context) error {
         logger.Info("Cleaning up resources...")
-        return db.Close()
+
+        // Use a WaitGroup to wait for all cleanup operations to complete
+        var wg sync.WaitGroup
+
+        // Create a channel to collect errors
+        errCh := make(chan error, 3) // Buffer for all possible errors
+
+        // Close resources concurrently
+        wg.Add(3)
+
+        // Close HTTP server
+        go func() {
+            defer wg.Done()
+            if err := server.Close(shutdownCtx); err != nil {
+                errCh <- fmt.Errorf("failed to close HTTP server: %w", err)
+            }
+        }()
+
+        // Close background worker
+        go func() {
+            defer wg.Done()
+            if err := worker.Close(shutdownCtx); err != nil {
+                errCh <- fmt.Errorf("failed to close background worker: %w", err)
+            }
+        }()
+
+        // Close database
+        go func() {
+            defer wg.Done()
+            if err := db.Close(); err != nil {
+                errCh <- fmt.Errorf("failed to close database: %w", err)
+            }
+        }()
+
+        // Wait for all goroutines to complete
+        wg.Wait()
+        close(errCh)
+
+        // Collect all errors
+        var errs []error
+        for err := range errCh {
+            errs = append(errs, err)
+        }
+
+        // Join all errors and return the combined error
+        if len(errs) > 0 {
+            return errors.Join(errs...)
+        }
+        return nil
     }
-    
+
     // Construct and return the application context
     return ezapp.Construct(
-        ezapp.WithRunners(server, worker),
+        ezapp.WithRunners(server.Run, worker.Run),
         ezapp.WithCleanup(cleanup),
     )
 }
 
-// Runner functions must match: func(context.Context) error
-func createHTTPServer(port int, db *sql.DB, logger *zap.Logger) func(context.Context) error {
-    return func(ctx context.Context) error {
-        server := &http.Server{
+// Runners are typically structs with Run and Close methods
+type HTTPServer struct {
+    server *http.Server
+    logger *zap.Logger
+}
+
+func createHTTPServer(port int, db *sql.DB, logger *zap.Logger) *HTTPServer {
+    return &HTTPServer{
+        server: &http.Server{
             Addr: fmt.Sprintf(":%d", port),
             // ... configure your server
-        }
-        
-        // Start graceful shutdown listener
-        go func() {
-            <-ctx.Done()
-            logger.Info("Shutting down HTTP server...")
-            server.Shutdown(context.Background())
-        }()
-        
-        logger.Info("Starting HTTP server", zap.Int("port", port))
-        if err := server.ListenAndServe(); err != http.ErrServerClosed {
-            return err
-        }
-        return nil
+        },
+        logger: logger,
     }
 }
 
-func createBackgroundWorker(db *sql.DB, logger *zap.Logger) func(context.Context) error {
-    return func(ctx context.Context) error {
-        logger.Info("Starting background worker...")
-        
-        for {
-            select {
-            case <-ctx.Done():
-                logger.Info("Background worker shutting down...")
-                return nil
-            default:
-                // Do your work here
-                time.Sleep(time.Second)
-            }
+// Run method implements the Runner interface
+func (s *HTTPServer) Run(ctx context.Context) error {
+    s.logger.Info("Starting HTTP server", zap.String("addr", s.server.Addr))
+    if err := s.server.ListenAndServe(); err != http.ErrServerClosed {
+        return err
+    }
+    return nil
+}
+
+// Close method for cleanup
+func (s *HTTPServer) Close(ctx context.Context) error {
+    s.logger.Info("Shutting down HTTP server...")
+    return s.server.Shutdown(ctx)
+}
+
+type BackgroundWorker struct {
+    db     *sql.DB
+    logger *zap.Logger
+    stopCh chan struct{}
+}
+
+func createBackgroundWorker(db *sql.DB, logger *zap.Logger) *BackgroundWorker {
+    return &BackgroundWorker{
+        db:     db,
+        logger: logger,
+        stopCh: make(chan struct{}),
+    }
+}
+
+// Run method implements the Runner interface
+func (w *BackgroundWorker) Run(ctx context.Context) error {
+    w.logger.Info("Starting background worker...")
+
+    ticker := time.NewTicker(time.Second)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ctx.Done():
+            return nil
+        case <-w.stopCh:
+            return nil
+        case <-ticker.C:
+            // Do your work here
         }
     }
+}
+
+// Close method for cleanup
+func (w *BackgroundWorker) Close(ctx context.Context) error {
+    w.logger.Info("Background worker shutting down...")
+    close(w.stopCh)
+    return nil
 }
 ```
 
@@ -199,13 +278,13 @@ Define your own configuration using go-env tags:
 type Config struct {
     // Required field
     DatabaseURL string `env:"DATABASE_URL" required:"true"`
-    
+
     // Optional with default
     Port int `env:"PORT" default:"8080"`
-    
+
     // String with default
     Environment string `env:"ENV" default:"development"`
-    
+
     // Boolean values
     EnableMetrics bool `env:"ENABLE_METRICS" default:"true"`
 }
@@ -217,14 +296,82 @@ type Config struct {
 
 ```go
 func Initialize(ctx ezapp.InitCtx[Config]) (ezapp.AppCtx, error) {
+    // Create service instances
+    httpServer := createHTTPServer(ctx.Config.Port, ctx.Logger)
+    grpcServer := createGRPCServer(ctx.Config.GRPCPort, ctx.Logger)
+    metricsServer := createMetricsServer(ctx.Config.MetricsPort, ctx.Logger)
+    worker := createBackgroundWorker(ctx.Config, ctx.Logger)
+
+    // Define cleanup function for resource cleanup
+    cleanup := func(shutdownCtx context.Context) error {
+        ctx.Logger.Info("Starting concurrent cleanup of services...")
+
+        // Use a WaitGroup to wait for all cleanup operations to complete
+        var wg sync.WaitGroup
+
+        // Create a channel to collect errors
+        errCh := make(chan error, 4) // Buffer for all possible errors
+
+        // Close all services concurrently
+        wg.Add(4)
+
+        // Close worker
+        go func() {
+            defer wg.Done()
+            if err := worker.Close(shutdownCtx); err != nil {
+                errCh <- fmt.Errorf("failed to close worker: %w", err)
+            }
+        }()
+
+        // Close metrics server
+        go func() {
+            defer wg.Done()
+            if err := metricsServer.Close(shutdownCtx); err != nil {
+                errCh <- fmt.Errorf("failed to close metrics server: %w", err)
+            }
+        }()
+
+        // Close gRPC server
+        go func() {
+            defer wg.Done()
+            if err := grpcServer.Close(shutdownCtx); err != nil {
+                errCh <- fmt.Errorf("failed to close gRPC server: %w", err)
+            }
+        }()
+
+        // Close HTTP server
+        go func() {
+            defer wg.Done()
+            if err := httpServer.Close(shutdownCtx); err != nil {
+                errCh <- fmt.Errorf("failed to close HTTP server: %w", err)
+            }
+        }()
+
+        // Wait for all goroutines to complete
+        wg.Wait()
+        close(errCh)
+
+        // Collect all errors
+        var errs []error
+        for err := range errCh {
+            errs = append(errs, err)
+        }
+
+        // Join all errors and return the combined error
+        if len(errs) > 0 {
+            return errors.Join(errs...)
+        }
+        return nil
+    }
+
     return ezapp.Construct(
         ezapp.WithRunners(
-            createHTTPServer(ctx.Config, ctx.Logger),
-            createGRPCServer(ctx.Config, ctx.Logger),
-            createMetricsServer(ctx.Config, ctx.Logger),
-            createBackgroundWorker(ctx.Config, ctx.Logger),
+            httpServer.Run,
+            grpcServer.Run,
+            metricsServer.Run,
+            worker.Run,
         ),
-        ezapp.WithCleanup(cleanupResources),
+        ezapp.WithCleanup(cleanup),
     )
 }
 ```
@@ -233,46 +380,148 @@ func Initialize(ctx ezapp.InitCtx[Config]) (ezapp.AppCtx, error) {
 
 ```go
 func Initialize(ctx ezapp.InitCtx[Config]) (ezapp.AppCtx, error) {
+    // Setup resources
     db := setupDatabase(ctx.Config.DatabaseURL)
     cache := setupRedis(ctx.Config.RedisURL)
-    
+    messageQueue := setupMessageQueue(ctx.Config.MQUrl)
+    fileStorage := setupFileStorage(ctx.Config.StorageURL)
+
+    // Create server instance
+    server := createServer(db, cache, messageQueue, fileStorage, ctx.Logger)
+
+    // Define cleanup function for resource cleanup
     cleanup := func(shutdownCtx context.Context) error {
-        // Cleanup in reverse order of initialization
-        cacheErr := cache.Close()
-        dbErr := db.Close()
-        
+        ctx.Logger.Info("Starting concurrent cleanup of resources...")
+
+        // Use a WaitGroup to wait for all cleanup operations to complete
+        var wg sync.WaitGroup
+
+        // Create a slice to collect errors
+        errCh := make(chan error, 5) // Buffer for all possible errors
+
+        // First close the server (this must be done first and sequentially)
+        if err := server.Close(shutdownCtx); err != nil {
+            return fmt.Errorf("failed to close server: %w", err)
+        }
+
+        // Close remaining resources concurrently
+        wg.Add(4)
+
+        // Close file storage
+        go func() {
+            defer wg.Done()
+            if err := fileStorage.Close(); err != nil {
+                errCh <- fmt.Errorf("failed to close file storage: %w", err)
+            }
+        }()
+
+        // Close message queue
+        go func() {
+            defer wg.Done()
+            if err := messageQueue.Close(); err != nil {
+                errCh <- fmt.Errorf("failed to close message queue: %w", err)
+            }
+        }()
+
+        // Close cache
+        go func() {
+            defer wg.Done()
+            if err := cache.Close(); err != nil {
+                errCh <- fmt.Errorf("failed to close cache: %w", err)
+            }
+        }()
+
+        // Close database (last resource to be initialized, closed last)
+        go func() {
+            defer wg.Done()
+            if err := db.Close(); err != nil {
+                errCh <- fmt.Errorf("failed to close database: %w", err)
+            }
+        }()
+
+        // Wait for all goroutines to complete
+        wg.Wait()
+        close(errCh)
+
+        // Collect all errors
+        var errs []error
+        for err := range errCh {
+            errs = append(errs, err)
+        }
+
         // Join all errors and return the combined error
-        return errors.Join(cacheErr, dbErr)
+        if len(errs) > 0 {
+            return errors.Join(errs...)
+        }
+        return nil
     }
-    
+
     return ezapp.Construct(
-        ezapp.WithRunners(createServer(db, cache)),
+        ezapp.WithRunners(server.Run),
         ezapp.WithCleanup(cleanup),
     )
 }
 ```
 
-### Accessing Shutdown Timeout in Runners
+### Proper Cleanup in Initializer
 
 ```go
-func createServer(config Config, logger *zap.Logger) func(context.Context) error {
-    return func(ctx context.Context) error {
-        server := &http.Server{Addr: fmt.Sprintf(":%d", config.Port)}
-        
+func Initialize(ctx ezapp.InitCtx[Config]) (ezapp.AppCtx, error) {
+    // Setup resources
+    db := setupDatabase(ctx.Config.DatabaseURL)
+    server := createHTTPServer(ctx.Config.Port, db, ctx.Logger)
+
+    // Define cleanup function for resource cleanup
+    cleanup := func(shutdownCtx context.Context) error {
+        ctx.Logger.Info("Cleaning up resources...")
+
+        // Use a WaitGroup to wait for all cleanup operations to complete
+        var wg sync.WaitGroup
+
+        // Create a channel to collect errors
+        errCh := make(chan error, 2) // Buffer for all possible errors
+
+        // Close resources concurrently
+        wg.Add(2)
+
+        // Close HTTP server
         go func() {
-            <-ctx.Done()
-            
-            // Get shutdown timeout from the startup context
-            // (passed through the context chain)
-            shutdownTimeout := config.GetShutdownTimeout(ctx)
-            shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-            defer cancel()
-            
-            server.Shutdown(shutdownCtx)
+            defer wg.Done()
+            if err := server.Close(shutdownCtx); err != nil {
+                errCh <- fmt.Errorf("failed to close HTTP server: %w", err)
+            }
         }()
-        
-        return server.ListenAndServe()
+
+        // Close database
+        go func() {
+            defer wg.Done()
+            if err := db.Close(); err != nil {
+                errCh <- fmt.Errorf("failed to close database: %w", err)
+            }
+        }()
+
+        // Wait for all goroutines to complete
+        wg.Wait()
+        close(errCh)
+
+        // Collect all errors
+        var errs []error
+        for err := range errCh {
+            errs = append(errs, err)
+        }
+
+        // Join all errors and return the combined error
+        if len(errs) > 0 {
+            return errors.Join(errs...)
+        }
+        return nil
     }
+
+    // Construct and return the application context
+    return ezapp.Construct(
+        ezapp.WithRunners(server.Run),
+        ezapp.WithCleanup(cleanup),
+    )
 }
 ```
 
