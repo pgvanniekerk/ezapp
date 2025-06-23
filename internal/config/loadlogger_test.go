@@ -1,11 +1,11 @@
 package config
 
 import (
+	"log/slog"
 	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap/zapcore"
 )
 
 func TestLoadLogger(t *testing.T) {
@@ -16,62 +16,47 @@ func TestLoadLogger(t *testing.T) {
 	testCases := []struct {
 		name          string
 		logLevelEnv   string
-		expectedLevel zapcore.Level
+		expectedLevel slog.Level
 	}{
 		{
 			name:          "debug level",
 			logLevelEnv:   "DEBUG",
-			expectedLevel: zapcore.DebugLevel,
+			expectedLevel: slog.LevelDebug,
 		},
 		{
 			name:          "info level",
 			logLevelEnv:   "INFO",
-			expectedLevel: zapcore.InfoLevel,
+			expectedLevel: slog.LevelInfo,
 		},
 		{
 			name:          "warn level",
 			logLevelEnv:   "WARN",
-			expectedLevel: zapcore.WarnLevel,
+			expectedLevel: slog.LevelWarn,
 		},
 		{
 			name:          "error level",
 			logLevelEnv:   "ERROR",
-			expectedLevel: zapcore.ErrorLevel,
-		},
-		{
-			name:          "dpanic level",
-			logLevelEnv:   "DPANIC",
-			expectedLevel: zapcore.DPanicLevel,
-		},
-		{
-			name:          "panic level",
-			logLevelEnv:   "PANIC",
-			expectedLevel: zapcore.PanicLevel,
-		},
-		{
-			name:          "fatal level",
-			logLevelEnv:   "FATAL",
-			expectedLevel: zapcore.FatalLevel,
+			expectedLevel: slog.LevelError,
 		},
 		{
 			name:          "lowercase level",
 			logLevelEnv:   "debug",
-			expectedLevel: zapcore.DebugLevel,
+			expectedLevel: slog.LevelDebug,
 		},
 		{
 			name:          "mixed case level",
 			logLevelEnv:   "DeBuG",
-			expectedLevel: zapcore.DebugLevel,
+			expectedLevel: slog.LevelDebug,
 		},
 		{
 			name:          "empty level defaults to info",
 			logLevelEnv:   "",
-			expectedLevel: zapcore.InfoLevel,
+			expectedLevel: slog.LevelInfo,
 		},
 		{
 			name:          "invalid level defaults to info",
 			logLevelEnv:   "INVALID",
-			expectedLevel: zapcore.InfoLevel,
+			expectedLevel: slog.LevelInfo,
 		},
 	}
 
@@ -83,13 +68,11 @@ func TestLoadLogger(t *testing.T) {
 			// Load logger
 			logger := LoadLogger()
 
-			// Check that the logger has the expected level
-			// Note: We can't directly access the logger's level, but we can check if
-			// the logger would log at the expected level
+			// Check that the logger is not nil
+			// Note: slog doesn't provide a way to directly access the logger's level
 			assert.NotNil(t, logger, "Logger should not be nil")
-			
-			// Clean up
-			_ = logger.Sync() // Flush any buffered log entries
+
+			// No need to call Sync() as slog doesn't have this method
 		})
 	}
 }

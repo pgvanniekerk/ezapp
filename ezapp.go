@@ -4,7 +4,8 @@ import (
 	"context"
 	"github.com/pgvanniekerk/ezapp/internal/app"
 	"github.com/pgvanniekerk/ezapp/internal/config"
-	"go.uber.org/zap"
+	"log/slog"
+	"os"
 )
 
 // InitCtx provides the initialization context passed to an Initializer function.
@@ -20,10 +21,10 @@ type InitCtx[Config any] struct {
 	// The timeout is controlled by the EZAPP_STARTUP_TIMEOUT environment variable.
 	StartupCtx context.Context
 
-	// Logger is a configured zap.Logger instance ready for use.
+	// Logger is a configured slog.Logger instance ready for use.
 	// The log level is controlled by the EZAPP_LOG_LEVEL environment variable
-	// (default: INFO). Supports DEBUG, INFO, WARN, ERROR, DPANIC, PANIC, FATAL.
-	Logger *zap.Logger
+	// (default: INFO). Supports DEBUG, INFO, WARN, ERROR.
+	Logger *slog.Logger
 
 	// Config contains the application configuration loaded from environment variables
 	// using the Netflix go-env package. The Config type should be a struct with
@@ -194,13 +195,15 @@ func Run[Config any](initializer Initializer[Config]) {
 	// Load configuration from environment variables
 	cfg, err := config.LoadVar[Config]()
 	if err != nil {
-		logger.Fatal("failed to load configuration", zap.Error(err))
+		logger.Error("failed to load configuration", "error", err)
+		os.Exit(1)
 	}
 
-	// Create startup context with timeout
+	// Create a startup context with timeout
 	startupCtx, err := config.StartupCtx()
 	if err != nil {
-		logger.Fatal("failed to create startup context", zap.Error(err))
+		logger.Error("failed to create startup context", "error", err)
+		os.Exit(1)
 	}
 
 	// Create initialization context
@@ -213,7 +216,8 @@ func Run[Config any](initializer Initializer[Config]) {
 	// Invoke the initializer to get the app context
 	appCtx, err := initializer(initCtx)
 	if err != nil {
-		logger.Fatal("initialization failed", zap.Error(err))
+		logger.Error("initialization failed", "error", err)
+		os.Exit(1)
 	}
 
 	// Create and run the app
@@ -226,23 +230,25 @@ func Run[Config any](initializer Initializer[Config]) {
 		// Create a shutdown context with the configured timeout
 		shutdownCtx, err := config.ShutdownCtx()
 		if err != nil {
-			logger.Fatal("failed to create shutdown context", zap.Error(err))
+			logger.Error("failed to create shutdown context", "error", err)
+			os.Exit(1)
 		}
 
 		// Run cleanup function
 		if cleanupErr := appCtx.cleanupFunc(shutdownCtx); cleanupErr != nil {
-			logger.Error("cleanup failed", zap.Error(cleanupErr))
+			logger.Error("cleanup failed", "error", cleanupErr)
 			// If the app ran successfully but cleanup failed, fatal exit
 			if appErr == nil {
-				logger.Fatal("application cleanup failed", zap.Error(cleanupErr))
+				logger.Error("application cleanup failed", "error", cleanupErr)
+				os.Exit(1)
 			}
-			// If both app and cleanup failed, fatal exit with app error (more critical)
 		}
 	}
 
 	// If the app failed, fatal exit
 	if appErr != nil {
-		logger.Fatal("application failed", zap.Error(appErr))
+		logger.Error("application failed", "error", appErr)
+		os.Exit(1)
 	}
 
 	// Application completed successfully
