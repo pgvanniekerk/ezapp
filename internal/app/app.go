@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"golang.org/x/sync/errgroup"
-	"log
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
